@@ -1,11 +1,14 @@
 import datetime
 import http.client
+import http.cookiejar
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
 BASE = "https://www.net.city.nagoya.jp/cgi-bin/sp/"
-HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": BASE + "sps04001"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1", "Referer": BASE + "sps04001", "Origin": "https://www.net.city.nagoya.jp", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "ja-JP,ja;q=0.9"}
+COOKIES = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIES))
 
 class Inspector(HTMLParser):
     def __init__(self):
@@ -47,9 +50,10 @@ class Inspector(HTMLParser):
 
 def fetch(url, data=None):
     request = urllib.request.Request(url, data=data, headers=HEADERS)
-    with urllib.request.urlopen(request, timeout=30) as r:
+    with OPENER.open(request, timeout=30) as r:
         raw = r.read()
         print("HTTP", r.status, "URL", r.geturl(), "bytes", len(raw))
+    print("Cookie count:", len(COOKIES))
     return raw.decode("shift_jis", errors="replace")
 
 first = Inspector()
@@ -58,7 +62,7 @@ print("Initial forms:", first.forms)
 print("Initial fields:", first.fields)
 
 # One read-only availability search, not a booking operation.
-day = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date() + datetime.timedelta(days=1)
+day = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date() + datetime.timedelta(days=2)
 params = dict(first.fields)
 params.update({
     "syumoku": "024",
@@ -66,9 +70,13 @@ params.update({
     "day": day.strftime("%d"),
     "joken": "1",
     "kyoyo1": "05",
-    "kyoyo2": "05",
+    "kyoyo2": "00",
     "chiiki": "20",
     "button": "照会",
+    "syumokunm": "バドミントン",
+    "chiikinm": "全地域",
+    "kyoyo1nm": "夜間",
+    "kyoyo2nm": "−−",
 })
 print("Testing read-only search date:", day.isoformat())
 try:
