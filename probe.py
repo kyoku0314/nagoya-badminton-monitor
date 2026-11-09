@@ -1,4 +1,5 @@
 import datetime
+import http.client
 import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
@@ -81,3 +82,7 @@ try:
         print(line[:200])
 except Exception as exc:
     print("Search request error:", type(exc).__name__, str(exc)[:350])
+    if isinstance(exc, http.client.IncompleteRead):
+        partial = exc.partial
+        print("Partial response bytes:", len(partial))
+        print("Partial response:", partial.decode("shift_jis", errors="replace")[:3000])
