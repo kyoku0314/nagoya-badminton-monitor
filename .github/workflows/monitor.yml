@@ -11,5 +11,19 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+      - name: Check booking credentials are configured (no login or booking)
+        env:
+          NAGOYA_USER_ID: ${{ secrets.NAGOYA_USER_ID }}
+          NAGOYA_PASSWORD: ${{ secrets.NAGOYA_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import os, sys
+          keys = ('NAGOYA_USER_ID', 'NAGOYA_PASSWORD')
+          missing = [key for key in keys if not os.environ.get(key, '').strip()]
+          for key in keys:
+              print(f'{key}: ' + ('MISSING' if key in missing else 'CONFIGURED'))
+          if missing:
+              sys.exit(1)
+          PY
       - name: Inspect Nagoya reservation form
         run: python3 probe.py
