@@ -1,35 +1,13 @@
-
 name: Nagoya Badminton Monitor
 
 on:
   workflow_dispatch:
 
 jobs:
-  discord-test:
+  inspect-form:
     runs-on: ubuntu-latest
     steps:
-      - name: Send Discord test
-        env:
-          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          python3 - <<'PY'
-          import os
-          import json
-          import urllib.request
-
-          url = os.environ["WEBHOOK"]
-          data = json.dumps({
-              "content": "🏸 名古屋羽毛球监控测试成功！"
-          }).encode("utf-8")
-
-          req = urllib.request.Request(
-              url,
-              data=data,
-          headers={"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"},
-  
-              method="POST"
-          )
-
-          with urllib.request.urlopen(req, timeout=20) as r:
-              print("Discord HTTP status:", r.status)
-          PY
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Inspect Nagoya reservation form
+        run: python3 probe.py
