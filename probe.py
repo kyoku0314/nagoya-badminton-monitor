@@ -1,53 +1,83 @@
+import datetime
+import urllib.parse
 import urllib.request
 from html.parser import HTMLParser
 
-URL = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
+BASE = "https://www.net.city.nagoya.jp/cgi-bin/sp/"
+HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": BASE + "sps04001"}
 
 class Inspector(HTMLParser):
     def __init__(self):
         super().__init__()
-        self.form = None
+        self.in_user = False
         self.select = None
-        self.option = None
-        self.option_text = []
-        self.forms = 0
         self.fields = {}
+        self.text = []
+        self.links = []
+        self.forms = []
+        self.current_form = None
 
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         if tag == "form":
-            self.forms += 1
-            self.form = self.forms
-            print("FORM", self.form, "method", a.get("method"), "action", a.get("action"))
-        elif self.form and tag == "select":
+            self.current_form = {"action": a.get("action"), "method": a.get("method")}
+            self.forms.append(self.current_form)
+            self.in_user = a.get("name") == "user"
+        if self.in_user and tag == "input" and a.get("name"):
+            self.fields[a["name"]] = a.get("value", "")
+        if self.in_user and tag == "select":
             self.select = a.get("name")
-            self.fields.setdefault(self.form, {})[self.select] = []
-        elif self.form and tag == "option" and self.select:
-            self.option = a.get("value", "")
-            self.option_text = []
-        elif self.form and tag == "input":
-            print("INPUT", self.form, a.get("name"), a.get("type"), repr(a.get("value", "")), "checked", "checked" in a)
-
-    def handle_data(self, data):
-        if self.option is not None:
-            self.option_text.append(data)
+        if self.in_user and tag == "option" and self.select and self.select not in self.fields:
+            self.fields[self.select] = a.get("value", "")
+        if tag == "a":
+            self.links.append(a.get("href", ""))
 
     def handle_endtag(self, tag):
-        if tag == "option" and self.option is not None:
-            name = " ".join("".join(self.option_text).split())
-            print("OPTION", self.form, self.select, repr(self.option), repr(name))
-            self.fields[self.form][self.select].append((self.option, name))
-            self.option = None
-        elif tag == "select":
+        if tag == "select":
             self.select = None
-        elif tag == "form":
-            self.form = None
+        if tag == "form":
+            self.in_user = False
+            self.current_form = None
 
-req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
-with urllib.request.urlopen(req, timeout=30) as response:
-    raw = response.read()
-    print("HTTP", response.status, "bytes", len(raw))
-html = raw.decode("shift_jis", errors="replace")
-inspector = Inspector()
-inspector.feed(html)
-print("Forms found:", inspector.forms)
+    def handle_data(self, data):
+        s = " ".join(data.split())
+        if s:
+            self.text.append(s)
+
+def fetch(url, data=None):
+    request = urllib.request.Request(url, data=data, headers=HEADERS)
+    with urllib.request.urlopen(request, timeout=30) as r:
+        raw = r.read()
+        print("HTTP", r.status, "URL", r.geturl(), "bytes", len(raw))
+    return raw.decode("shift_jis", errors="replace")
+
+first = Inspector()
+first.feed(fetch(BASE + "sps04001"))
+print("Initial forms:", first.forms)
+print("Initial fields:", first.fields)
+
+# One read-only availability search, not a booking operation.
+day = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=9))).date() + datetime.timedelta(days=1)
+params = dict(first.fields)
+params.update({
+    "syumoku": "024",
+    "month": day.strftime("%m"),
+    "day": day.strftime("%d"),
+    "joken": "1",
+    "kyoyo1": "05",
+    "kyoyo2": "05",
+    "chiiki": "20",
+    "button": "照会",
+})
+print("Testing read-only search date:", day.isoformat())
+try:
+    html = fetch(BASE + "sps04002", urllib.parse.urlencode(params, encoding="shift_jis").encode("ascii"))
+    parsed = Inspector()
+    parsed.feed(html)
+    print("Result forms:", parsed.forms)
+    print("Result links:", parsed.links[:25])
+    print("Result text (first 130 lines):")
+    for line in parsed.text[:130]:
+        print(line[:200])
+except Exception as exc:
+    print("Search request error:", type(exc).__name__, str(exc)[:350])
