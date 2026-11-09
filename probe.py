@@ -85,4 +85,7 @@ except Exception as exc:
     if isinstance(exc, http.client.IncompleteRead):
         partial = exc.partial
         print("Partial response bytes:", len(partial))
-        print("Partial response:", partial.decode("shift_jis", errors="replace")[:3000])
+        page = partial.decode("shift_jis", errors="replace")
+        print("Partial response:", page[:3000])
+        if "サービス時間外エラー画面" in page or "spsConnectionErr.html" in page:
+            raise SystemExit("Reservation search is unavailable: service-hours error. Do not interpret as zero vacancies.")
