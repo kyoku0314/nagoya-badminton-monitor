@@ -2,6 +2,8 @@ name: Nagoya Badminton Monitor
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
 
 jobs:
   inspect-form:
