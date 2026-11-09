@@ -69,13 +69,13 @@ params.update({
     "month": day.strftime("%m"),
     "day": day.strftime("%d"),
     "joken": "1",
-    "kyoyo1": "05",
+    "kyoyo1": "07",
     "kyoyo2": "00",
     "chiiki": "20",
     "button": "照会",
     "syumokunm": "バドミントン",
     "chiikinm": "全地域",
-    "kyoyo1nm": "夜間",
+    "kyoyo1nm": "全供用",
     "kyoyo2nm": "−−",
 })
 print("Testing read-only search date:", day.isoformat())
