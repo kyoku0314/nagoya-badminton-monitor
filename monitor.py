@@ -121,6 +121,8 @@ def main():
             fields["month"] = day.strftime("%m")
             current_month = (day.year, day.month)
         fields["day"] = day.strftime("%d")
+        fields["kyoyo1"] = "05" if day.weekday() < 5 else "07"
+        fields["kyoyo1nm"] = "夜間" if day.weekday() < 5 else "全供用"
         page = None
         try:
             candidate = Parser()
