@@ -2,6 +2,12 @@ name: Nagoya Badminton Monitor
 
 on:
   workflow_dispatch:
+    inputs:
+      test_discord_only:
+        description: "Only test Discord webhook (skip court monitoring)"
+        required: false
+        type: boolean
+        default: false
   schedule:
     - cron: '*/15 23,0-14 * * *'
 
@@ -14,6 +20,7 @@ concurrency:
 
 jobs:
   monitor:
+    if: ${{ inputs.test_discord_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -47,3 +54,34 @@ jobs:
             git commit -m "Update monitor state [skip ci]"
             git push
           fi
+
+  test_discord:
+    if: ${{ inputs.test_discord_only == true }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord test message
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request, urllib.error
+          url = os.environ.get("DISCORD_WEBHOOK_URL", "").strip()
+          if not url:
+              raise SystemExit("ERROR: DISCORD_WEBHOOK_URL secret is missing or empty")
+          if not url.startswith(("https://discord.com/api/webhooks/", "https://discordapp.com/api/webhooks/")):
+              raise SystemExit("ERROR: Webhook URL format is unexpected; check the GitHub secret")
+          data = json.dumps({"content": "🏸 名古屋羽毛球监控：Discord Webhook 测试消息（不查询场地）"}).encode()
+          request = urllib.request.Request(url, data=data, headers={
+              "Content-Type": "application/json",
+              "User-Agent": "Mozilla/5.0"})
+          try:
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  print("Discord test succeeded, HTTP", response.status)
+          except urllib.error.HTTPError as error:
+              print("Discord test failed, HTTP", error.code)
+              print("Response body (truncated):", error.read(350).decode("utf-8", "replace"))
+              raise SystemExit(1)
+          except urllib.error.URLError as error:
+              print("Discord network error:", type(error.reason).__name__)
+              raise SystemExit(1)
+          PY
