@@ -1,0 +1,26 @@
+name: Discord Test Notification
+on:
+  push:
+    paths:
+      - discord-test-trigger.txt
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord test
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python3 - <<'PY'
+          import os, json, urllib.request
+          url = os.environ.get("DISCORD_WEBHOOK_URL", "")
+          if not url:
+              raise SystemExit("DISCORD_WEBHOOK_URL is not configured")
+          msg = {"content": "🏸 名古屋羽毛球场地监控｜Discord 推送测试成功！\n这是一条测试消息，不代表发现空场或完成预约。"}
+          request = urllib.request.Request(url, data=json.dumps(msg, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "NagoyaBadmintonMonitor/1.0"})
+          with urllib.request.urlopen(request, timeout=20) as response:
+              print("Discord response:", response.status)
+          PY
