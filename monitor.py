@@ -175,6 +175,7 @@ def main():
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
+    mention = "<@581389351649542154>"
     def send_discord(message, label):
         if not webhook:
             print(f"Discord webhook missing; {label} not sent", flush=True)
@@ -208,7 +209,7 @@ def main():
                 for _, v in batch
             )
             alert = {
-                "content": "🏸 **发现新的羽毛球空场！**",
+                "content": f"{mention} 🏸 **发现新的羽毛球空场！**",
                 "embeds": [{
                     "title": "🏸 新增可用场地",
                     "description": details,
@@ -216,7 +217,7 @@ def main():
                     "url": booking_url,
                     "footer": {"text": "仅供查询参考 · 请在官网确认并自行预约"}
                 }],
-                "allowed_mentions": {"parse": []}
+                "allowed_mentions": {"users": ["581389351649542154"]}
             }
             if send_discord(alert, "vacancy alert"):
                 notified.update(dict(batch))
@@ -234,6 +235,7 @@ def main():
         headline = "✅ 暂无空场"
 
     report = {
+        "content": f"{mention} 🏸 监控完成",
         "embeds": [{
             "title": "🏸 名古屋羽毛球监控",
             "description": (
