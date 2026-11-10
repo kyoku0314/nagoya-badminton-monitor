@@ -179,7 +179,8 @@ def main():
         if not webhook:
             print(f"Discord webhook missing; {label} not sent", flush=True)
             return False
-        payload = json.dumps({"content": message}, ensure_ascii=False).encode("utf-8")
+        payload_data = message if isinstance(message, dict) else {"content": message}
+        payload = json.dumps(payload_data, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(webhook.strip(), data=payload, headers={
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0",
@@ -196,33 +197,63 @@ def main():
             print(f"Discord {label} network error: {type(exc).__name__}", flush=True)
         return False
 
+    booking_url = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
     notified = {}
     if new:
-        for batch_start in range(0, len(new), 8):
-            batch = list(new.values())[batch_start:batch_start+8]
-            msg = "🏸 名古屋市羽毛球空场（尚未预约）\\n" + "\\n".join(
-                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
-            msg += "\\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
-            if send_discord(msg, "vacancy alert"):
-                notified.update({k:v for k,v in list(new.items())[batch_start:batch_start+8]})
+        items = list(new.items())
+        for batch_start in range(0, len(items), 8):
+            batch = items[batch_start:batch_start+8]
+            details = "\n".join(
+                f"**{v['date']} · {v['time']}**\n{v['area']} · {v['venue']}"
+                for _, v in batch
+            )
+            alert = {
+                "content": "🏸 **发现新的羽毛球空场！**",
+                "embeds": [{
+                    "title": "🏸 新增可用场地",
+                    "description": details,
+                    "color": 0xF59E0B,
+                    "url": booking_url,
+                    "footer": {"text": "仅供查询参考 · 请在官网确认并自行预约"}
+                }],
+                "allowed_mentions": {"parse": []}
+            }
+            if send_discord(alert, "vacancy alert"):
+                notified.update(dict(batch))
 
     start_date = window[0].isoformat()
     end_date = window[-1].isoformat()
-    status = ("✅ 全部查询完成" if failed == 0 else
-              f"⚠️ {failed} 天查询失败，已安排下次优先补查")
-    vacancy = (f"🏸 本次发现 {len(found)} 条匹配空场，其中新增 {len(new)} 条"
-               if found else "🏸 本次未发现符合条件的空场")
-    report = (
-        "📋 名古屋市羽毛球场地监控报告\\n"
-        f"⏰ 查询时间：{now.strftime('%Y-%m-%d %H:%M')}（日本时间）\\n"
-        f"📅 查询日期：{start_date} ～ {end_date}（共 {horizon} 天）\\n"
-        "📍 查询区域：全地域\\n"
-        "🕕 周一至周五：夜間；周末：全供用\\n"
-        f"🔎 成功查询：{checked}/{horizon} 天；失败：{failed} 天\\n"
-        f"{vacancy}\\n"
-        f"{status}\\n"
-        "官网：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
-    )
+    if failed:
+        color = 0xE6A23C
+        headline = "⚠️ 部分日期查询失败"
+        summary = f"有 **{failed} 天**尚未完成查询，已加入下次优先补查。"
+    elif found:
+        color = 0xE6A23C
+        headline = "🏸 检测到可用场地"
+        summary = f"发现 **{len(found)} 条**符合条件的空场，其中新增 **{len(new)} 条**。"
+    else:
+        color = 0x2ECC71
+        headline = "✅ 本次未发现空场"
+        summary = "本轮查询已完成，目前未检测到符合条件的羽毛球空场。"
+
+    report = {
+        "embeds": [{
+            "title": "🏸 名古屋羽毛球场地监控",
+            "description": f"**{headline}**\n{summary}",
+            "color": color,
+            "fields": [
+                {"name": "📅 查询日期", "value": f"{start_date} ～ {end_date}\n共 {horizon} 天", "inline": False},
+                {"name": "🔎 查询成功", "value": f"**{checked}/{horizon} 天**", "inline": True},
+                {"name": "⚠️ 查询失败", "value": f"**{failed} 天**", "inline": True},
+                {"name": "🏸 匹配空场", "value": f"**{len(found)} 条**", "inline": True},
+                {"name": "📍 查询范围", "value": "名古屋市 · 全区域", "inline": True},
+                {"name": "🕒 查询时段", "value": "工作日 18:00–21:00\n周末 全天", "inline": True},
+            ],
+            "url": booking_url,
+            "footer": {"text": f"查询时间 {now.strftime('%Y-%m-%d %H:%M')} JST · 自动监控 · 不会自动预约"}
+        }],
+        "allowed_mentions": {"parse": []}
+    }
     send_discord(report, "monitoring report")
     # Only mark notified slots as seen; retain history for 65 days.
     if webhook:
