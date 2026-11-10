@@ -58,7 +58,7 @@ class Parser(HTMLParser):
 def fetch(opener, path, fields=None):
     data = urllib.parse.urlencode(fields, encoding="shift_jis").encode("ascii") if fields else None
     req = urllib.request.Request(BASE + path, data=data, headers=HEADERS)
-    with opener.open(req, timeout=25) as response:
+    with opener.open(req, timeout=8) as response:
         return response.read().decode("shift_jis", errors="replace")
 
 def parse_results(lines, day):
@@ -110,31 +110,9 @@ def main():
         try:
             page.feed(fetch(opener, "sps04002", fields))
         except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead) as exc:
-            print(f"Query failed for {day}: {type(exc).__name__}; restarting from menu")
-            try:
-                jar.clear()
-                with opener.open(urllib.request.Request(
-                    "https://www.net.city.nagoya.jp/sporec/index.html",
-                    headers=HEADERS), timeout=12) as response:
-                    response.read()
-                refreshed = Parser()
-                refreshed.feed(fetch(opener, "sps04001"))
-                if "syumoku" not in refreshed.fields:
-                    raise RuntimeError("Search form missing after recovery")
-                fields = dict(refreshed.fields)
-                fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
-                              joken="1", kyoyo1="07", kyoyo2="00", chiiki="20",
-                              button="照会", syumokunm="バドミントン", chiikinm="全地域",
-                              kyoyo1nm="全供用", kyoyo2nm="−−")
-                time.sleep(2)
-                page = Parser()
-                page.feed(fetch(opener, "sps04002", fields))
-                first = refreshed
-                print(f"Recovered query for {day}")
-            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as recovery_error:
-                print(f"Recovery failed for {day}: {type(recovery_error).__name__}; skipped, not marked empty")
-                failed += 1
-                continue
+            print(f"Query failed for {day}: {type(exc).__name__}; skipped, not marked empty", flush=True)
+            failed += 1
+            continue
         if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
             print(f"Site service error for {day}; skipped, not marked empty")
             failed += 1
@@ -149,7 +127,7 @@ def main():
             found[key] = row
         checked += 1
         print(day, "matching slots:", len(rows), flush=True)
-        time.sleep(1.0)
+        time.sleep(0.5)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
     if new and webhook:
