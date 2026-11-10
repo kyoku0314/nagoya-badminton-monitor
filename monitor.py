@@ -187,6 +187,32 @@ def main():
                 print("Discord status:", response.status)
     elif new:
         print("Discord webhook missing; no notification sent")
+    # Always report each completed monitoring cycle, including zero vacancies.
+    if webhook:
+        start_date = window[0].isoformat()
+        end_date = window[-1].isoformat()
+        status = ("✅ 全部查询完成" if failed == 0 else
+                  f"⚠️ 有 {failed} 天查询失败，已安排下次优先补查")
+        vacancy = (f"🏸 本次发现 {len(found)} 条匹配空场，其中新增 {len(new)} 条"
+                   if found else "🏸 本次未发现符合条件的空场")
+        report = (
+            "📋 名古屋市羽毛球场地监控报告\\n"
+            f"⏰ 查询时间：{now.strftime('%Y-%m-%d %H:%M')}（日本时间）\\n"
+            f"📅 查询日期：{start_date} ～ {end_date}（共 {horizon} 天）\\n"
+            f"📍 查询区域：全地域\\n"
+            "🕕 周一至周五：夜間；周末：全供用\\n"
+            f"🔎 成功查询：{checked}/{horizon} 天；失败：{failed} 天\\n"
+            f"{vacancy}\\n"
+            f"{status}\\n"
+            "官网：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
+        )
+        payload = json.dumps({"content": report}, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(webhook, data=payload,
+                                     headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as response:
+            print("Discord monitoring report status:", response.status, flush=True)
+    else:
+        print("Discord webhook missing; monitoring report not sent", flush=True)
     # Only mark notified slots as seen; retain history for 65 days.
     if webhook:
         previous.update(new)
