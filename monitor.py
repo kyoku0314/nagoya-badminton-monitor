@@ -112,20 +112,48 @@ def main():
             fields["month"] = day.strftime("%m")
             current_month = (day.year, day.month)
         fields["day"] = day.strftime("%d")
-        page = Parser()
-        try:
-            page.feed(fetch(opener, "sps04002", fields))
-        except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead) as exc:
-            print(f"Query failed for {day}: {type(exc).__name__}; skipped, not marked empty", flush=True)
+        page = None
+        for attempt in range(2):
+            try:
+                candidate = Parser()
+                candidate.feed(fetch(opener, "sps04002", fields))
+                if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
+                    raise RuntimeError("Site service error")
+                if "空き検索結果" not in " ".join(candidate.text):
+                    raise RuntimeError("Unexpected results page")
+                page = candidate
+                if attempt:
+                    print(f"Recovered query for {day}", flush=True)
+                break
+            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+                print(f"Query attempt {attempt + 1} failed for {day}: {type(exc).__name__}", flush=True)
+                if attempt:
+                    break
+                try:
+                    jar.clear()
+                    with opener.open(urllib.request.Request(
+                        "https://www.net.city.nagoya.jp/sporec/index.html",
+                        headers=HEADERS), timeout=8) as response:
+                        response.read()
+                    refreshed = Parser()
+                    refreshed.feed(fetch(opener, "sps04001"))
+                    if "syumoku" not in refreshed.fields:
+                        raise RuntimeError("Search form missing after recovery")
+                    first = refreshed
+                    fields = dict(first.fields)
+                    fields.update(syumoku="024", joken="1", kyoyo1="07",
+                                  kyoyo2="00", chiiki="20", button="照会",
+                                  syumokunm="バドミントン", chiikinm="全地域",
+                                  kyoyo1nm="全供用", kyoyo2nm="−−",
+                                  month=day.strftime("%m"), day=day.strftime("%d"))
+                    current_month = (day.year, day.month)
+                    time.sleep(0.5)
+                except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as recovery_error:
+                    print(f"Homepage recovery failed for {day}: {type(recovery_error).__name__}", flush=True)
+                    break
+        if page is None:
             failed += 1
-            continue
-        if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
-            print(f"Site service error for {day}; skipped, not marked empty")
-            failed += 1
-            continue
-        if "空き検索結果" not in " ".join(page.text):
-            print(f"Unexpected results page for {day}; skipped, not marked empty")
-            failed += 1
+            print(f"Skipped {day}; not marked empty", flush=True)
             continue
         rows = parse_results(page.text, day)
         for row in rows:
