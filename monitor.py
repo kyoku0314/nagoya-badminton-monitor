@@ -108,8 +108,29 @@ def main():
         try:
             page.feed(fetch(opener, "sps04002", fields))
         except (TimeoutError, urllib.error.URLError) as exc:
-            print(f"Query temporarily unavailable for {day}: {type(exc).__name__}; continuing safely")
-            continue
+            print(f"Query failed for {day}: {type(exc).__name__}; restarting from menu")
+            try:
+                jar.clear()
+                with opener.open(urllib.request.Request(
+                    "https://www.net.city.nagoya.jp/sporec/index.html",
+                    headers=HEADERS), timeout=12) as response:
+                    response.read()
+                refreshed = Parser()
+                refreshed.feed(fetch(opener, "sps04001"))
+                if "syumoku" not in refreshed.fields:
+                    raise RuntimeError("Search form missing after recovery")
+                fields = dict(refreshed.fields)
+                fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
+                              joken="1", kyoyo1="07", kyoyo2="00", chiiki="20",
+                              button="照会", syumokunm="バドミントン", chiikinm="全地域",
+                              kyoyo1nm="全供用", kyoyo2nm="−−")
+                time.sleep(2)
+                page = Parser()
+                page.feed(fetch(opener, "sps04002", fields))
+                print(f"Recovered query for {day}")
+            except (TimeoutError, urllib.error.URLError, RuntimeError) as recovery_error:
+                print(f"Recovery failed for {day}: {type(recovery_error).__name__}; skipped, not marked empty")
+                continue
         if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
             raise RuntimeError("Site service error; not zero availability")
         if "空き検索結果" not in " ".join(page.text):
