@@ -3,6 +3,7 @@ import datetime as dt
 import http.client
 import http.cookiejar
 import json
+from browser_fallback import query_with_browser
 import urllib.error
 import os
 import re
@@ -121,46 +122,41 @@ def main():
             current_month = (day.year, day.month)
         fields["day"] = day.strftime("%d")
         page = None
-        for attempt in range(2):
+        try:
+            candidate = Parser()
+            candidate.feed(fetch(opener, "sps04002", fields))
+            if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
+                raise RuntimeError("Site service error")
+            if "空き検索結果" not in " ".join(candidate.text):
+                raise RuntimeError("Unexpected results page")
+            page = candidate
+        except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+            print(f"HTTP query failed for {day}: {type(exc).__name__}", flush=True)
+            print(f"Waiting 10 seconds before browser recovery for {day}", flush=True)
+            time.sleep(10)
             try:
+                html = query_with_browser(day, fields)
                 candidate = Parser()
-                candidate.feed(fetch(opener, "sps04002", fields))
-                if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
-                    raise RuntimeError("Site service error")
+                candidate.feed(html)
                 if "空き検索結果" not in " ".join(candidate.text):
-                    raise RuntimeError("Unexpected results page")
+                    raise RuntimeError("Browser did not return search results")
                 page = candidate
-                if attempt:
-                    print(f"Recovered query for {day}", flush=True)
-                break
-            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
-                print(f"Query attempt {attempt + 1} failed for {day}: {type(exc).__name__}", flush=True)
-                if attempt:
-                    break
-                print(f"Waiting 10 seconds before homepage recovery for {day}", flush=True)
-                time.sleep(10)
-                try:
-                    jar.clear()
-                    with opener.open(urllib.request.Request(
-                        "https://www.net.city.nagoya.jp/sporec/index.html",
-                        headers=HEADERS), timeout=8) as response:
-                        response.read()
-                    refreshed = Parser()
-                    refreshed.feed(fetch(opener, "sps04001"))
-                    if "syumoku" not in refreshed.fields:
-                        raise RuntimeError("Search form missing after recovery")
-                    first = refreshed
-                    fields = dict(first.fields)
+                print(f"Browser recovered query for {day}", flush=True)
+                # Browser session is separate from urllib session. Restart the
+                # HTTP form session before querying subsequent dates.
+                jar.clear()
+                refreshed = Parser()
+                refreshed.feed(fetch(opener, "sps04001"))
+                if "syumoku" in refreshed.fields:
+                    fields = dict(refreshed.fields)
                     fields.update(syumoku="024", joken="1", kyoyo1="07",
                                   kyoyo2="00", chiiki="20", button="照会",
                                   syumokunm="バドミントン", chiikinm="全地域",
                                   kyoyo1nm="全供用", kyoyo2nm="−−",
                                   month=day.strftime("%m"), day=day.strftime("%d"))
                     current_month = (day.year, day.month)
-                    time.sleep(0.5)
-                except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as recovery_error:
-                    print(f"Homepage recovery failed for {day}: {type(recovery_error).__name__}", flush=True)
-                    break
+            except Exception as recovery_error:
+                print(f"Browser recovery failed for {day}: {type(recovery_error).__name__}: {str(recovery_error)[:160]}", flush=True)
         if page is None:
             failed += 1
             failed_dates.append(day.isoformat())
