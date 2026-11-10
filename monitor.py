@@ -148,7 +148,7 @@ def main():
         for batch_start in range(0, len(new), 8):
             batch = list(new.values())[batch_start:batch_start+8]
             msg = "🏸 名古屋市羽毛球空场（尚未预约）\n" + "\n".join(
-                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
+                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)\n            msg += "\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001\n请自行确认空位及网上预约期限；此消息不代表预约成功。"
             payload = json.dumps({"content": msg}, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=20) as response:
