@@ -175,52 +175,58 @@ def main():
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
-    if new and webhook:
-        for batch_start in range(0, len(new), 8):
-            batch = list(new.values())[batch_start:batch_start+8]
-            msg = "🏸 名古屋市羽毛球空场（尚未预约）\n" + "\n".join(
-                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
-            msg += "\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001\n请自行确认空位及网上预约期限；此消息不代表预约成功。"
-            payload = json.dumps({"content": msg}, ensure_ascii=False).encode("utf-8")
-            req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json", "User-Agent": "NagoyaBadmintonMonitor/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as response:
-                print("Discord status:", response.status)
-    elif new:
-        print("Discord webhook missing; no notification sent")
-    # Always report each completed monitoring cycle, including zero vacancies.
-    if webhook:
-        start_date = window[0].isoformat()
-        end_date = window[-1].isoformat()
-        status = ("✅ 全部查询完成" if failed == 0 else
-                  f"⚠️ 有 {failed} 天查询失败，已安排下次优先补查")
-        vacancy = (f"🏸 本次发现 {len(found)} 条匹配空场，其中新增 {len(new)} 条"
-                   if found else "🏸 本次未发现符合条件的空场")
-        report = (
-            "📋 名古屋市羽毛球场地监控报告\\n"
-            f"⏰ 查询时间：{now.strftime('%Y-%m-%d %H:%M')}（日本时间）\\n"
-            f"📅 查询日期：{start_date} ～ {end_date}（共 {horizon} 天）\\n"
-            f"📍 查询区域：全地域\\n"
-            "🕕 周一至周五：夜間；周末：全供用\\n"
-            f"🔎 成功查询：{checked}/{horizon} 天；失败：{failed} 天\\n"
-            f"{vacancy}\\n"
-            f"{status}\\n"
-            "官网：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
-        )
-        payload = json.dumps({"content": report}, ensure_ascii=False).encode("utf-8")
-        req = urllib.request.Request(webhook, data=payload,
-                                     headers={"Content-Type": "application/json"})
+    def send_discord(message, label):
+        if not webhook:
+            print(f"Discord webhook missing; {label} not sent", flush=True)
+            return False
+        payload = json.dumps({"content": message}, ensure_ascii=False).encode("utf-8")
+        req = urllib.request.Request(webhook.strip(), data=payload, headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "application/json",
+        })
         try:
             with urllib.request.urlopen(req, timeout=20) as response:
-                print("Discord monitoring report status:", response.status, flush=True)
+                print(f"Discord {label} status: {response.status}", flush=True)
+                return 200 <= response.status < 300
         except urllib.error.HTTPError as exc:
-            print(f"Discord monitoring report rejected: HTTP {exc.code}", flush=True)
+            detail = exc.read(250).decode("utf-8", errors="replace")
+            print(f"Discord {label} rejected: HTTP {exc.code}; response: {detail}", flush=True)
         except (urllib.error.URLError, TimeoutError) as exc:
-            print(f"Discord monitoring report network error: {type(exc).__name__}", flush=True)
-    else:
-        print("Discord webhook missing; monitoring report not sent", flush=True)
+            print(f"Discord {label} network error: {type(exc).__name__}", flush=True)
+        return False
+
+    notified = {}
+    if new:
+        for batch_start in range(0, len(new), 8):
+            batch = list(new.values())[batch_start:batch_start+8]
+            msg = "🏸 名古屋市羽毛球空场（尚未预约）\\n" + "\\n".join(
+                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
+            msg += "\\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
+            if send_discord(msg, "vacancy alert"):
+                notified.update({k:v for k,v in list(new.items())[batch_start:batch_start+8]})
+
+    start_date = window[0].isoformat()
+    end_date = window[-1].isoformat()
+    status = ("✅ 全部查询完成" if failed == 0 else
+              f"⚠️ {failed} 天查询失败，已安排下次优先补查")
+    vacancy = (f"🏸 本次发现 {len(found)} 条匹配空场，其中新增 {len(new)} 条"
+               if found else "🏸 本次未发现符合条件的空场")
+    report = (
+        "📋 名古屋市羽毛球场地监控报告\\n"
+        f"⏰ 查询时间：{now.strftime('%Y-%m-%d %H:%M')}（日本时间）\\n"
+        f"📅 查询日期：{start_date} ～ {end_date}（共 {horizon} 天）\\n"
+        "📍 查询区域：全地域\\n"
+        "🕕 周一至周五：夜間；周末：全供用\\n"
+        f"🔎 成功查询：{checked}/{horizon} 天；失败：{failed} 天\\n"
+        f"{vacancy}\\n"
+        f"{status}\\n"
+        "官网：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
+    )
+    send_discord(report, "monitoring report")
     # Only mark notified slots as seen; retain history for 65 days.
     if webhook:
-        previous.update(new)
+        previous.update(notified)
         cutoff = (now.date() - dt.timedelta(days=1)).isoformat()
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
