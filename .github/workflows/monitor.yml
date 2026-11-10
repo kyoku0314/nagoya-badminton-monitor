@@ -2,28 +2,34 @@ name: Nagoya Badminton Monitor
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+  schedule:
+    - cron: '*/15 23,0-14 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nagoya-badminton-monitor
+  cancel-in-progress: false
 
 jobs:
-  inspect-form:
+  monitor:
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-      - name: Check booking credentials are configured (no login or booking)
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - name: Monitor available courts (read only)
         env:
-          NAGOYA_USER_ID: ${{ secrets.NAGOYA_USER_ID }}
-          NAGOYA_PASSWORD: ${{ secrets.NAGOYA_PASSWORD }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python3 monitor.py
+      - name: Save notified slots
         run: |
-          python3 - <<'PY'
-          import os, sys
-          keys = ('NAGOYA_USER_ID', 'NAGOYA_PASSWORD')
-          missing = [key for key in keys if not os.environ.get(key, '').strip()]
-          for key in keys:
-              print(f'{key}: ' + ('MISSING' if key in missing else 'CONFIGURED'))
-          if missing:
-              sys.exit(1)
-          PY
-      - name: Inspect Nagoya reservation form
-        run: python3 probe.py
+          if [ -n "$(git status --porcelain seen.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add seen.json
+            git commit -m "Update notified court slots [skip ci]"
+            git push
+          fi
