@@ -2,6 +2,7 @@
 import datetime as dt
 import http.cookiejar
 import json
+import urllib.error
 import os
 import re
 import time
@@ -95,8 +96,8 @@ def main():
     found = {}
     # 14 queries per run, rotate through a 60-day horizon; limits load on city servers.
     horizon = 60
-    for offset in range(14):
-        delta = 2 + (((now.timetuple().tm_yday * 64 + now.hour * 4 + now.minute // 15) * 14 + offset) % (horizon - 1))
+    for offset in range(4):
+        delta = 2 + (((now.timetuple().tm_yday * 64 + now.hour * 4 + now.minute // 15) * 4 + offset) % (horizon - 1))
         day = now.date() + dt.timedelta(days=delta)
         fields = dict(first.fields)
         fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
@@ -104,7 +105,11 @@ def main():
                       button="照会", syumokunm="バドミントン", chiikinm="全地域",
                       kyoyo1nm="全供用", kyoyo2nm="−−")
         page = Parser()
-        page.feed(fetch(opener, "sps04002", fields))
+        try:
+            page.feed(fetch(opener, "sps04002", fields))
+        except (TimeoutError, urllib.error.URLError) as exc:
+            print(f"Query temporarily unavailable for {day}: {type(exc).__name__}; continuing safely")
+            continue
         if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
             raise RuntimeError("Site service error; not zero availability")
         if "空き検索結果" not in " ".join(page.text):
@@ -114,7 +119,7 @@ def main():
             key = "|".join(row.values())
             found[key] = row
         print(day, "matching slots:", len(rows))
-        time.sleep(1.2)
+        time.sleep(2.0)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
     if new and webhook:
