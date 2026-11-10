@@ -28,6 +28,16 @@ jobs:
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
         run: python3 monitor.py
+      - name: Upload browser failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-failure-diagnostics
+          path: |
+            browser_failure.png
+            browser_failure.html
+          if-no-files-found: ignore
+          retention-days: 3
       - name: Save notified slots and failed-date backlog
         run: |
           if [ -n "$(git status --porcelain -- seen.json failed_dates.json)" ]; then
