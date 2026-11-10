@@ -95,10 +95,11 @@ def main():
         raise RuntimeError("Search form missing; refusing to interpret as empty")
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
-    # 14 queries per run, rotate through a 60-day horizon; limits load on city servers.
+    # Check every date from tomorrow through day 60 on each scheduled run.
     horizon = 60
-    for offset in range(4):
-        delta = 1 + ((now.hour * 4 + now.minute // 15 + offset) % horizon)
+    checked = 0
+    failed = 0
+    for delta in range(1, horizon + 1):
         day = now.date() + dt.timedelta(days=delta)
         fields = dict(first.fields)
         fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
@@ -128,27 +129,35 @@ def main():
                 time.sleep(2)
                 page = Parser()
                 page.feed(fetch(opener, "sps04002", fields))
+                first = refreshed
                 print(f"Recovered query for {day}")
             except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as recovery_error:
                 print(f"Recovery failed for {day}: {type(recovery_error).__name__}; skipped, not marked empty")
+                failed += 1
                 continue
         if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
-            raise RuntimeError("Site service error; not zero availability")
+            print(f"Site service error for {day}; skipped, not marked empty")
+            failed += 1
+            continue
         if "空き検索結果" not in " ".join(page.text):
-            raise RuntimeError("Unexpected results page")
+            print(f"Unexpected results page for {day}; skipped, not marked empty")
+            failed += 1
+            continue
         rows = parse_results(page.text, day)
         for row in rows:
             key = "|".join(row.values())
             found[key] = row
-        print(day, "matching slots:", len(rows))
-        time.sleep(2.0)
+        checked += 1
+        print(day, "matching slots:", len(rows), flush=True)
+        time.sleep(1.0)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
     if new and webhook:
         for batch_start in range(0, len(new), 8):
             batch = list(new.values())[batch_start:batch_start+8]
             msg = "🏸 名古屋市羽毛球空场（尚未预约）\n" + "\n".join(
-                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)\n            msg += "\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001\n请自行确认空位及网上预约期限；此消息不代表预约成功。"
+                f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
+            msg += "\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001\n请自行确认空位及网上预约期限；此消息不代表预约成功。"
             payload = json.dumps({"content": msg}, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
             with urllib.request.urlopen(req, timeout=20) as response:
@@ -161,7 +170,7 @@ def main():
         cutoff = (now.date() - dt.timedelta(days=1)).isoformat()
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
-    print("New matching slots:", len(new), "Booking disabled")
+    print(f"Date coverage: {checked}/60 checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
 
 if __name__ == "__main__":
     main()
