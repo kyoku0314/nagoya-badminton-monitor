@@ -225,32 +225,27 @@ def main():
     end_date = window[-1].isoformat()
     if failed:
         color = 0xE6A23C
-        headline = "⚠️ 部分日期查询失败"
-        summary = f"有 **{failed} 天**尚未完成查询，已加入下次优先补查。"
+        headline = f"⚠️ {failed} 天查询失败 · 下次补查"
     elif found:
-        color = 0xE6A23C
-        headline = "🏸 检测到可用场地"
-        summary = f"发现 **{len(found)} 条**符合条件的空场，其中新增 **{len(new)} 条**。"
+        color = 0xF59E0B
+        headline = f"🏸 发现 {len(found)} 条空场 · 新增 {len(new)} 条"
     else:
         color = 0x2ECC71
-        headline = "✅ 本次未发现空场"
-        summary = "本轮查询已完成，目前未检测到符合条件的羽毛球空场。"
+        headline = "✅ 暂无空场"
 
     report = {
         "embeds": [{
-            "title": "🏸 名古屋羽毛球场地监控",
-            "description": f"**{headline}**\n{summary}",
+            "title": "🏸 名古屋羽毛球监控",
+            "description": (
+                f"**{headline}**\n"
+                f"📅 {start_date} ～ {end_date}\n"
+                f"🔎 成功 **{checked}/{horizon}**  ·  ⚠️ 失败 **{failed}**  ·  🏸 空场 **{len(found)}**"
+            ),
             "color": color,
-            "fields": [
-                {"name": "📅 查询日期", "value": f"{start_date} ～ {end_date}\n共 {horizon} 天", "inline": False},
-                {"name": "🔎 查询成功", "value": f"**{checked}/{horizon} 天**", "inline": True},
-                {"name": "⚠️ 查询失败", "value": f"**{failed} 天**", "inline": True},
-                {"name": "🏸 匹配空场", "value": f"**{len(found)} 条**", "inline": True},
-                {"name": "📍 查询范围", "value": "名古屋市 · 全区域", "inline": True},
-                {"name": "🕒 查询时段", "value": "工作日 18:00–21:00\n周末 全天", "inline": True},
-            ],
             "url": booking_url,
-            "footer": {"text": f"查询时间 {now.strftime('%Y-%m-%d %H:%M')} JST · 自动监控 · 不会自动预约"}
+            "footer": {
+                "text": f"{now.strftime('%m/%d %H:%M')} JST · 全区域 · 工作日夜间 / 周末全天"
+            }
         }],
         "allowed_mentions": {"parse": []}
     }
