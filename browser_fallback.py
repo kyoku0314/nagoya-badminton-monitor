@@ -15,7 +15,7 @@ def query_with_browser(day, fields):
             page.goto(HOME, wait_until="domcontentloaded", timeout=15000)
             link = page.locator('a[href*="sps04001"]')
             if link.count():
-                link.first.click(wait_until="domcontentloaded", timeout=15000)
+                link.first.click(timeout=15000)
             else:
                 # Some homepage links may be JavaScript-driven; use the
                 # documented search URL after visiting the homepage.
