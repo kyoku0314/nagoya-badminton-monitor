@@ -21,22 +21,23 @@ def query_with_browser(day, fields):
                 # documented search URL after visiting the homepage.
                 page.goto(SEARCH, wait_until="domcontentloaded", timeout=15000)
             page.locator('form[name="user"]').wait_for(timeout=12000)
-            # Populate existing form controls; dispatch change events so the
-            # site's own JavaScript can update dependent selections.
-            page.evaluate("""(values) => {
-                const form = document.forms['user'];
-                for (const [name, value] of Object.entries(values)) {
-                    const elements = Array.from(form.elements).filter(e => e.name === name);
-                    for (const element of elements) {
-                        if (element.type === 'radio' || element.type === 'checkbox') {
-                            element.checked = element.value === value;
-                        } else if (element.type !== 'submit' && element.type !== 'button') {
-                            element.value = value;
-                        }
-                        element.dispatchEvent(new Event('change', {bubbles: true}));
-                    }
-                }
-            }""", fields)
+            # Use real select interactions so dependent JavaScript receives
+            # input/change events, as it would during a manual search.
+            for name in ("syumoku", "month", "day", "joken", "kyoyo1", "kyoyo2", "chiiki"):
+                value = fields.get(name)
+                if value is None:
+                    continue
+                control = page.locator(f'form[name="user"] select[name="{name}"]')
+                if control.count():
+                    control.first.select_option(value=str(value))
+                else:
+                    radios = page.locator(f'form[name="user"] input[type="radio"][name="{name}"][value="{value}"]')
+                    if radios.count():
+                        radios.first.check()
+                    else:
+                        page.locator(f'form[name="user"] [name="{name}"]').first.evaluate(
+                            "(el, value) => {el.value = value; el.dispatchEvent(new Event('change', {bubbles: true}));}",
+                            str(value))
             submit = page.locator('form[name="user"] input[name="button"]')
             if submit.count():
                 submit.first.click(timeout=12000)
