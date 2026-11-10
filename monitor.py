@@ -16,6 +16,7 @@ from pathlib import Path
 JST = dt.timezone(dt.timedelta(hours=9))
 BASE = "https://www.net.city.nagoya.jp/cgi-bin/sp/"
 STATE = Path("seen.json")
+FAILED_STATE = Path("failed_dates.json")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
     "Referer": BASE + "sps04001",
@@ -63,8 +64,8 @@ def fetch(opener, path, fields=None):
 
 def parse_results(lines, day):
     results = []
-    for i in range(len(lines) - 12):
-        if lines[i:i+2] != ["No.", str(len(results) + 1)] and lines[i] != "No.":
+    for i in range(len(lines)):
+        if lines[i] != "No.":
             continue
         section = lines[i:i+18]
         def after(label):
@@ -106,8 +107,15 @@ def main():
                   chiiki="20", button="照会", syumokunm="バドミントン",
                   chiikinm="全地域", kyoyo1nm="全供用", kyoyo2nm="−−")
     current_month = None
-    for delta in range(1, horizon + 1):
-        day = now.date() + dt.timedelta(days=delta)
+    window = [now.date() + dt.timedelta(days=delta) for delta in range(1, horizon + 1)]
+    try:
+        old_failed = json.loads(FAILED_STATE.read_text()) if FAILED_STATE.exists() else []
+    except (ValueError, OSError):
+        old_failed = []
+    priority = set(old_failed) if isinstance(old_failed, list) else set()
+    dates = sorted(window, key=lambda d: (d.isoformat() not in priority, d))
+    failed_dates = []
+    for day in dates:
         if current_month != (day.year, day.month):
             fields["month"] = day.strftime("%m")
             current_month = (day.year, day.month)
@@ -155,6 +163,7 @@ def main():
                     break
         if page is None:
             failed += 1
+            failed_dates.append(day.isoformat())
             print(f"Skipped {day}; not marked empty", flush=True)
             continue
         rows = parse_results(page.text, day)
@@ -164,6 +173,8 @@ def main():
         checked += 1
         print(day, "matching slots:", len(rows), flush=True)
         time.sleep(0.5)
+    FAILED_STATE.write_text(json.dumps(failed_dates, ensure_ascii=False, indent=2) + "\\n".replace("\\n", "\n"))
+    print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
     if new and webhook:
