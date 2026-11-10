@@ -95,8 +95,8 @@ def main():
         raise RuntimeError("Search form missing; refusing to interpret as empty")
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
-    # Check every date from tomorrow through day 60 on each scheduled run.
-    horizon = 60
+    # Check every date from tomorrow through day 20 on each scheduled run.
+    horizon = 20
     checked = 0
     failed = 0
     for delta in range(1, horizon + 1):
@@ -170,7 +170,7 @@ def main():
         cutoff = (now.date() - dt.timedelta(days=1)).isoformat()
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
-    print(f"Date coverage: {checked}/60 checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
+    print(f"Date coverage: {checked}/{horizon} checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
 
 if __name__ == "__main__":
     main()
