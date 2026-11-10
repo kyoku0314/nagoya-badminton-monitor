@@ -182,7 +182,7 @@ def main():
                 f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
             msg += "\n官网手动预约：https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001\n请自行确认空位及网上预约期限；此消息不代表预约成功。"
             payload = json.dumps({"content": msg}, ensure_ascii=False).encode("utf-8")
-            req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
+            req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json", "User-Agent": "NagoyaBadmintonMonitor/1.0"})
             with urllib.request.urlopen(req, timeout=20) as response:
                 print("Discord status:", response.status)
     elif new:
@@ -209,8 +209,13 @@ def main():
         payload = json.dumps({"content": report}, ensure_ascii=False).encode("utf-8")
         req = urllib.request.Request(webhook, data=payload,
                                      headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=20) as response:
-            print("Discord monitoring report status:", response.status, flush=True)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                print("Discord monitoring report status:", response.status, flush=True)
+        except urllib.error.HTTPError as exc:
+            print(f"Discord monitoring report rejected: HTTP {exc.code}", flush=True)
+        except (urllib.error.URLError, TimeoutError) as exc:
+            print(f"Discord monitoring report network error: {type(exc).__name__}", flush=True)
     else:
         print("Discord webhook missing; monitoring report not sent", flush=True)
     # Only mark notified slots as seen; retain history for 65 days.
