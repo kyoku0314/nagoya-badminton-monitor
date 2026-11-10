@@ -99,13 +99,19 @@ def main():
     horizon = 20
     checked = 0
     failed = 0
+    # Keep one browser-like session and one form state for the entire scan.
+    # Only change the day; update month only when the scan crosses a month boundary.
+    fields = dict(first.fields)
+    fields.update(syumoku="024", joken="1", kyoyo1="07", kyoyo2="00",
+                  chiiki="20", button="照会", syumokunm="バドミントン",
+                  chiikinm="全地域", kyoyo1nm="全供用", kyoyo2nm="−−")
+    current_month = None
     for delta in range(1, horizon + 1):
         day = now.date() + dt.timedelta(days=delta)
-        fields = dict(first.fields)
-        fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
-                      joken="1", kyoyo1="07", kyoyo2="00", chiiki="20",
-                      button="照会", syumokunm="バドミントン", chiikinm="全地域",
-                      kyoyo1nm="全供用", kyoyo2nm="−−")
+        if current_month != (day.year, day.month):
+            fields["month"] = day.strftime("%m")
+            current_month = (day.year, day.month)
+        fields["day"] = day.strftime("%d")
         page = Parser()
         try:
             page.feed(fetch(opener, "sps04002", fields))
