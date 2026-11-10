@@ -129,6 +129,8 @@ def main():
                 print(f"Query attempt {attempt + 1} failed for {day}: {type(exc).__name__}", flush=True)
                 if attempt:
                     break
+                print(f"Waiting 10 seconds before homepage recovery for {day}", flush=True)
+                time.sleep(10)
                 try:
                     jar.clear()
                     with opener.open(urllib.request.Request(
