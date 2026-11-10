@@ -1,5 +1,6 @@
 """Read-only Nagoya badminton availability monitor. No login or booking submission."""
 import datetime as dt
+import http.client
 import http.cookiejar
 import json
 import urllib.error
@@ -107,7 +108,7 @@ def main():
         page = Parser()
         try:
             page.feed(fetch(opener, "sps04002", fields))
-        except (TimeoutError, urllib.error.URLError) as exc:
+        except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead) as exc:
             print(f"Query failed for {day}: {type(exc).__name__}; restarting from menu")
             try:
                 jar.clear()
@@ -128,7 +129,7 @@ def main():
                 page = Parser()
                 page.feed(fetch(opener, "sps04002", fields))
                 print(f"Recovered query for {day}")
-            except (TimeoutError, urllib.error.URLError, RuntimeError) as recovery_error:
+            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as recovery_error:
                 print(f"Recovery failed for {day}: {type(recovery_error).__name__}; skipped, not marked empty")
                 continue
         if "サービス時間外エラー画面" in page.text or "spsConnectionErr.html" in page.text:
