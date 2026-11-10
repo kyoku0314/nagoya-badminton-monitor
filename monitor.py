@@ -71,7 +71,7 @@ def parse_results(lines, day):
             except (ValueError, IndexError):
                 return ""
         venue, area, slot = after("施設"), after("地域"), after("供用区分")
-        match = re.search(r"(\\d{1,2}):(\\d{2})\\s*[-−ー~～]\\s*(\\d{1,2}):(\\d{2})", slot)
+        match = re.search(r"(\d{1,2}):(\d{2})\s*[-−ー~～]\s*(\d{1,2}):(\d{2})", slot)
         if venue and area and match:
             start = int(match.group(1))*60 + int(match.group(2))
             end = int(match.group(3))*60 + int(match.group(4))
@@ -96,7 +96,7 @@ def main():
     # 14 queries per run, rotate through a 60-day horizon; limits load on city servers.
     horizon = 60
     for offset in range(14):
-        delta = 2 + ((now.timetuple().tm_yday * 14 + offset) % (horizon - 1))
+        delta = 2 + (((now.timetuple().tm_yday * 64 + now.hour * 4 + now.minute // 15) * 14 + offset) % (horizon - 1))
         day = now.date() + dt.timedelta(days=delta)
         fields = dict(first.fields)
         fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
@@ -120,7 +120,7 @@ def main():
     if new and webhook:
         for batch_start in range(0, len(new), 8):
             batch = list(new.values())[batch_start:batch_start+8]
-            msg = "🏸 名古屋市羽毛球空场（尚未预约）\\n" + "\\n".join(
+            msg = "🏸 名古屋市羽毛球空场（尚未预约）\n" + "\n".join(
                 f"{v['date']} {v['time']} | {v['area']} {v['venue']}" for v in batch)
             payload = json.dumps({"content": msg}, ensure_ascii=False).encode("utf-8")
             req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
@@ -133,7 +133,7 @@ def main():
         previous.update(new)
         cutoff = (now.date() - dt.timedelta(days=1)).isoformat()
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
-        STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\\n")
+        STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
     print("New matching slots:", len(new), "Booking disabled")
 
 if __name__ == "__main__":
