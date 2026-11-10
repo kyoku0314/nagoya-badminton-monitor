@@ -24,35 +24,43 @@ def query_with_browser(day, fields):
                 print("Homepage button not found; opening known search URL", flush=True)
                 page.goto(SEARCH, wait_until="domcontentloaded", timeout=15000)
             page.locator('form[name="user"]').wait_for(timeout=12000)
-            # Change the sport first; the site's JS may repopulate supply options.
+            # The site's markup contains multiple forms; the visible date
+            # selects are not necessarily descendants of form[name="user"].
+            # Resolve visible controls globally rather than by form ancestry.
             for name in ("syumoku", "month", "day", "joken", "kyoyo1", "kyoyo2", "chiiki"):
                 value = fields.get(name)
                 if value is None:
                     continue
-                control = page.locator(f'form[name="user"] [name="{name}"]')
-                if not control.count():
-                    if name in ("kyoyo2",):
+                candidates = page.locator(f'select[name="{name}"], input[name="{name}"]')
+                visible = candidates.filter(visible=True)
+                if not visible.count():
+                    if name == "kyoyo2":
                         continue
-                    raise RuntimeError(f"Required control missing: {name}")
-                element = control.first
+                    raise RuntimeError(f"Visible control missing: {name}; DOM matches={candidates.count()}")
+                element = visible.first
                 tag = element.evaluate("(el) => el.tagName.toLowerCase()")
                 kind = element.get_attribute("type")
                 if tag == "select":
                     element.select_option(value=str(value), timeout=5000)
                 elif kind in ("radio", "checkbox"):
-                    option = page.locator(f'form[name="user"] input[name="{name}"][value="{value}"]')
+                    option = page.locator(f'input[name="{name}"][value="{value}"]').filter(visible=True)
                     if not option.count():
                         raise RuntimeError(f"Option missing: {name}={value}")
                     option.first.check(timeout=5000)
                 else:
                     element.fill(str(value), timeout=5000)
-            # Confirm actual chosen values before submitting.
-            selected = page.evaluate("""() => {
-                const f = document.forms['user'];
-                return Object.fromEntries(['syumoku','month','day','kyoyo1','chiiki'].map(n =>
-                    [n, f.elements[n]?.value ?? null]));
-            }""")
+            selected = page.evaluate("""() => Object.fromEntries(
+                ['syumoku','month','day','joken','kyoyo1','kyoyo2','chiiki'].map(n => {
+                    const items = Array.from(document.querySelectorAll('[name="' + n + '"]'));
+                    const el = items.find(e => e.getClientRects().length && e.type !== 'hidden');
+                    return [n, el?.type === 'radio'
+                        ? items.find(e => e.checked)?.value ?? null : el?.value ?? null];
+                })
+            )""")
             print(f"Browser form selections: {selected}", flush=True)
+            for name in ("syumoku", "month", "day", "kyoyo1", "chiiki"):
+                if selected.get(name) != fields.get(name):
+                    raise RuntimeError(f"Selection mismatch: {name}={selected.get(name)} expected {fields.get(name)}")
             submit = page.locator('form[name="user"] input[name="button"]')
             if submit.count():
                 submit.first.click(timeout=12000)
