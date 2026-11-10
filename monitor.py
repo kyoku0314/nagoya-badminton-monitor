@@ -96,9 +96,9 @@ def main():
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
     # 14 queries per run, rotate through a 60-day horizon; limits load on city servers.
-    horizon = 30
+    horizon = 60
     for offset in range(4):
-        delta = 2 + ((now.hour * 4 + now.minute // 15 + offset) % (horizon - 1))
+        delta = 1 + ((now.hour * 4 + now.minute // 15 + offset) % horizon)
         day = now.date() + dt.timedelta(days=delta)
         fields = dict(first.fields)
         fields.update(syumoku="024", month=day.strftime("%m"), day=day.strftime("%d"),
