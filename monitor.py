@@ -97,7 +97,7 @@ def main():
         raise RuntimeError("Search form missing; refusing to interpret as empty")
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
-    # Check every date from tomorrow through day 20 on each scheduled run.
+    # Check today and the next 19 days (20 dates total).
     horizon = 20
     checked = 0
     failed = 0
@@ -108,7 +108,7 @@ def main():
                   chiiki="20", button="照会", syumokunm="バドミントン",
                   chiikinm="全地域", kyoyo1nm="全供用", kyoyo2nm="−−")
     current_month = None
-    window = [now.date() + dt.timedelta(days=delta) for delta in range(1, horizon + 1)]
+    window = [now.date() + dt.timedelta(days=delta) for delta in range(horizon)]
     try:
         old_failed = json.loads(FAILED_STATE.read_text()) if FAILED_STATE.exists() else []
     except (ValueError, OSError):
@@ -124,18 +124,29 @@ def main():
         fields["kyoyo1"] = "05" if day.weekday() < 5 else "07"
         fields["kyoyo1nm"] = "夜間" if day.weekday() < 5 else "全供用"
         page = None
-        try:
-            candidate = Parser()
-            candidate.feed(fetch(opener, "sps04002", fields))
-            if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
-                raise RuntimeError("Site service error")
-            if "空き検索結果" not in " ".join(candidate.text):
-                raise RuntimeError("Unexpected results page")
-            page = candidate
-        except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
-            print(f"HTTP query failed for {day}: {type(exc).__name__}", flush=True)
-            print(f"Waiting 10 seconds before browser recovery for {day}", flush=True)
-            time.sleep(10)
+        for attempt in range(2):
+            try:
+                candidate = Parser()
+                candidate.feed(fetch(opener, "sps04002", fields))
+                if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
+                    raise RuntimeError("Site service error")
+                if "空き検索結果" not in " ".join(candidate.text):
+                    raise RuntimeError("Unexpected results page")
+                page = candidate
+                break
+            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+                print(f"HTTP query attempt {attempt + 1}/2 failed for {day}: {type(exc).__name__}", flush=True)
+                if attempt == 0:
+                    time.sleep(2)
+                    jar.clear()
+                    try:
+                        refreshed = Parser()
+                        refreshed.feed(fetch(opener, "sps04001"))
+                    except Exception as refresh_error:
+                        print(f"HTTP session refresh failed: {type(refresh_error).__name__}", flush=True)
+        if page is None:
+            print(f"Waiting 3 seconds before browser recovery for {day}", flush=True)
+            time.sleep(3)
             try:
                 html = query_with_browser(day, fields)
                 candidate = Parser()
@@ -251,6 +262,7 @@ def main():
         }],
         "allowed_mentions": {"parse": []}
     }
+    report["content"] = ""  # Routine status reports must not ping the user.
     send_discord(report, "monitoring report")
     # Only mark notified slots as seen; retain history for 65 days.
     if webhook:
@@ -259,6 +271,8 @@ def main():
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
     print(f"Date coverage: {checked}/{horizon} checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
+    if checked == 0:
+        raise RuntimeError("All monitored dates failed; marking workflow unsuccessful")
 
 if __name__ == "__main__":
     main()
