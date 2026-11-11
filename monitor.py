@@ -182,6 +182,61 @@ def main():
         checked += 1
         print(day, "matching slots:", len(rows), flush=True)
         time.sleep(0.5)
+    # Give dates that failed during the main scan one final attempt after all dates.
+    # Do not count a failed date as checked unless its results page is validated.
+    if failed_dates:
+        print(f"Final retry for {len(failed_dates)} failed dates", flush=True)
+        remaining = []
+        for date_text in failed_dates:
+            day = dt.date.fromisoformat(date_text)
+            retry_fields = dict(fields)
+            retry_fields.update(
+                month=day.strftime("%m"), day=day.strftime("%d"),
+                kyoyo1="05" if day.weekday() < 5 else "07",
+                kyoyo1nm="夜間" if day.weekday() < 5 else "全供用"
+            )
+            page = None
+            try:
+                jar.clear()
+                fresh = Parser()
+                fresh.feed(fetch(opener, "sps04001"))
+                if "syumoku" not in fresh.fields:
+                    raise RuntimeError("Search form missing on final retry")
+                retry_fields.update(fresh.fields)
+                retry_fields.update(
+                    syumoku="024", joken="1", kyoyo1="05" if day.weekday() < 5 else "07",
+                    kyoyo2="00", chiiki="20", button="照会",
+                    syumokunm="バドミントン", chiikinm="全地域",
+                    kyoyo1nm="夜間" if day.weekday() < 5 else "全供用",
+                    kyoyo2nm="−−", month=day.strftime("%m"), day=day.strftime("%d")
+                )
+                candidate = Parser()
+                candidate.feed(fetch(opener, "sps04002", retry_fields))
+                if "空き検索結果" not in " ".join(candidate.text):
+                    raise RuntimeError("Unexpected results page on final retry")
+                page = candidate
+                print(f"Final HTTP retry succeeded for {day}", flush=True)
+            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+                print(f"Final HTTP retry failed for {day}: {type(exc).__name__}", flush=True)
+                try:
+                    candidate = Parser()
+                    candidate.feed(query_with_browser(day, retry_fields))
+                    if "空き検索結果" not in " ".join(candidate.text):
+                        raise RuntimeError("Unexpected browser results on final retry")
+                    page = candidate
+                    print(f"Final browser retry succeeded for {day}", flush=True)
+                except Exception as recovery_error:
+                    print(f"Final browser retry failed for {day}: {type(recovery_error).__name__}", flush=True)
+            if page is None:
+                remaining.append(date_text)
+                continue
+            rows = parse_results(page.text, day)
+            for row in rows:
+                found["|".join(row.values())] = row
+            checked += 1
+            failed -= 1
+            print(f"Final retry {day} matching slots: {len(rows)}", flush=True)
+        failed_dates = remaining
     FAILED_STATE.write_text(json.dumps(failed_dates, ensure_ascii=False, indent=2) + "\\n".replace("\\n", "\n"))
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
