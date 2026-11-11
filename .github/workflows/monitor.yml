@@ -22,7 +22,7 @@ jobs:
   monitor:
     if: ${{ inputs.test_discord_only != true }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,18 +31,18 @@ jobs:
         run: |
           set -e
           python3 -m pip install --retries 5 --timeout 30 playwright
-          for attempt in 1 2 3; do
-            echo "Browser dependency installation attempt ${attempt}/3"
-            if python3 -m playwright install --with-deps chromium; then
+          for attempt in 1 2; do
+            echo "Browser dependency installation attempt ${attempt}/2"
+            if timeout 180 python3 -m playwright install chromium; then
               echo "Browser dependencies installed successfully"
               exit 0
             fi
-            if [ "$attempt" -lt 3 ]; then
+            if [ "$attempt" -lt 2 ]; then
               echo "Temporary installation failure; retrying in 30 seconds..."
               sleep 30
             fi
           done
-          echo "::error::Browser dependency installation failed after 3 attempts"
+          echo "::error::Browser dependency installation failed after 2 attempts"
           exit 1
       - name: Monitor available courts (read only)
         env:
