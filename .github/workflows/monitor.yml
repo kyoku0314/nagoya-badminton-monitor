@@ -29,8 +29,21 @@ jobs:
           persist-credentials: true
       - name: Install browser fallback dependencies
         run: |
-          python3 -m pip install playwright
-          python3 -m playwright install --with-deps chromium
+          set -e
+          python3 -m pip install --retries 5 --timeout 30 playwright
+          for attempt in 1 2 3; do
+            echo "Browser dependency installation attempt ${attempt}/3"
+            if python3 -m playwright install --with-deps chromium; then
+              echo "Browser dependencies installed successfully"
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Temporary installation failure; retrying in 30 seconds..."
+              sleep 30
+            fi
+          done
+          echo "::error::Browser dependency installation failed after 3 attempts"
+          exit 1
       - name: Monitor available courts (read only)
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
