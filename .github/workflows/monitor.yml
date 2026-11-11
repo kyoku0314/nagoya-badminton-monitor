@@ -23,27 +23,17 @@ jobs:
     if: ${{ inputs.test_discord_only != true }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    container:
+      image: mcr.microsoft.com/playwright/python:v1.58.0-noble
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - name: Install browser fallback dependencies
+      - name: Install matching Playwright Python package
         run: |
-          set -e
-          python3 -m pip install --retries 5 --timeout 30 playwright
-          for attempt in 1 2; do
-            echo "Browser dependency installation attempt ${attempt}/2"
-            if timeout 180 python3 -m playwright install chromium; then
-              echo "Browser dependencies installed successfully"
-              exit 0
-            fi
-            if [ "$attempt" -lt 2 ]; then
-              echo "Temporary installation failure; retrying in 30 seconds..."
-              sleep 30
-            fi
-          done
-          echo "::error::Browser dependency installation failed after 2 attempts"
-          exit 1
+          python -m pip install --retries 3 --timeout 20 playwright==1.58.0
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Monitor available courts (read only)
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
