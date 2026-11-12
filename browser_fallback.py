@@ -18,18 +18,18 @@ class BrowserSession:
     def query(self, day, fields):
         page = self.context.new_page()
         try:
-            page.set_default_timeout(8000)
-            page.goto(HOME, wait_until="domcontentloaded", timeout=10000)
+            page.set_default_timeout(12000)
+            page.goto(HOME, wait_until="domcontentloaded", timeout=15000)
             # Prefer the actual menu button visible on the homepage.
             link = page.get_by_role("link", name="利用日ごとの検索・予約")
             if not link.count():
                 link = page.locator('a:has(img[alt*="利用日ごと"]), a[href*="sps04001"]')
             if link.count():
-                link.first.click(timeout=10000)
+                link.first.click(timeout=15000)
             else:
                 print("Homepage button not found; opening known search URL", flush=True)
-                page.goto(SEARCH, wait_until="domcontentloaded", timeout=10000)
-            page.locator('form[name="user"]').wait_for(timeout=8000)
+                page.goto(SEARCH, wait_until="domcontentloaded", timeout=15000)
+            page.locator('form[name="user"]').wait_for(timeout=12000)
             # The site's markup contains multiple forms; the visible date
             # selects are not necessarily descendants of form[name="user"].
             # Resolve visible controls globally rather than by form ancestry.
@@ -69,11 +69,15 @@ class BrowserSession:
                     raise RuntimeError(f"Selection mismatch: {name}={selected.get(name)} expected {fields.get(name)}")
             submit = page.locator('form[name="user"] input[name="button"]')
             if submit.count():
-                submit.first.click(timeout=8000)
+                submit.first.click(timeout=12000)
             else:
                 page.evaluate("""() => document.forms['user'].submit()""")
-            page.wait_for_load_state("domcontentloaded", timeout=10000)
-            page.wait_for_timeout(350)
+            # A click can trigger a delayed navigation. Wait for the actual
+            # results marker, not merely the previous page's load state.
+            page.get_by_text("空き検索結果", exact=False).first.wait_for(
+                state="attached", timeout=15000
+            )
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
             return page.content()
         except Exception:
             if page is not None:
