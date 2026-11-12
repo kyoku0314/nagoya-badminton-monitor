@@ -19,6 +19,8 @@ def read_remote(name):
 def main():
     local_seen = json.loads(Path("seen.json").read_text(encoding="utf-8"))
     local_failed = json.loads(Path("failed_dates.json").read_text(encoding="utf-8"))
+    checked_path = Path("checked_dates_run.json")
+    local_checked = set(json.loads(checked_path.read_text(encoding="utf-8"))) if checked_path.exists() else set()
     if not isinstance(local_seen, dict) or not isinstance(local_failed, list):
         raise ValueError("Unexpected monitor state format")
     git("config", "user.name", "github-actions[bot]")
@@ -31,8 +33,9 @@ def main():
             raise ValueError("Unexpected remote monitor state format")
         # Retain notifications from both runs; never discard existing records.
         merged_seen = {**remote_seen, **local_seen}
-        # Conservative union: a failed date is retried rather than silently lost.
-        merged_failed = sorted(set(remote_failed) | set(local_failed))
+        # Keep failures from concurrent runs, but clear dates verified by this run.
+        # An unverified date is never removed from the retry queue.
+        merged_failed = sorted((set(remote_failed) | set(local_failed)) - local_checked)
         # Rebase only the two generated state files onto the newest remote commit.
         git("reset", "--hard", "origin/main")
         Path("seen.json").write_text(json.dumps(merged_seen, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
