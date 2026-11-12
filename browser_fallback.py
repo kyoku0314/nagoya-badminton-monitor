@@ -4,14 +4,20 @@ from playwright.sync_api import sync_playwright
 HOME = "https://www.net.city.nagoya.jp/sporec/index.html"
 SEARCH = "https://www.net.city.nagoya.jp/cgi-bin/sp/sps04001"
 
-def query_with_browser(day, fields):
-    with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
-        page = None
+class BrowserSession:
+    def __init__(self):
+        self.playwright = sync_playwright().start()
+        self.browser = self.playwright.chromium.launch(headless=True)
+        self.context = self.browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo",
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
+
+    def close(self):
+        self.browser.close()
+        self.playwright.stop()
+
+    def query(self, day, fields):
+        page = self.context.new_page()
         try:
-            context = browser.new_context(locale="ja-JP", timezone_id="Asia/Tokyo",
-                                          user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1")
-            page = context.new_page()
             page.set_default_timeout(12000)
             page.goto(HOME, wait_until="domcontentloaded", timeout=15000)
             # Prefer the actual menu button visible on the homepage.
@@ -79,4 +85,4 @@ def query_with_browser(day, fields):
                     print(f"Could not capture browser failure: {capture_error}", flush=True)
             raise
         finally:
-            browser.close()
+            page.close()
