@@ -90,11 +90,16 @@ def valid_results(page):
     text = " ".join(page.text)
     if "空き検索結果" not in text or "サービス時間外エラー画面" in text:
         return False
-    return "No." in page.text or any(t in text for t in (
+    return "No." in page.text or bool(re.search(r"(?:該当|検索結果|空き施設)[^。\\n]{0,35}0\\s*件|0\\s*件[^。\\n]{0,35}(?:該当|検索結果|空き施設)", text)) or any(t in text for t in (
         "該当する施設はありません", "該当データはありません", "検索結果はありません",
         "該当するデータはありません", "該当する空きはありません",
         "該当する施設がありません", "該当するデータがありません",
     ))
+
+def log_unverified(page, day, source):
+    # Record only short visible text to diagnose changing empty-result formats.
+    excerpt = " ".join(page.text)[:350]
+    print(f"Unverified {source} response for {day}: {excerpt!r}", flush=True)
 
 def main():
     now = dt.datetime.now(JST)
@@ -150,6 +155,7 @@ def main():
                 if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
                     raise RuntimeError("Site service error")
                 if not valid_results(candidate):
+                    log_unverified(candidate, day, "HTTP")
                     raise RuntimeError("Unverified results page")
                 page = candidate
                 consecutive_http_failures = 0
@@ -180,6 +186,7 @@ def main():
                 candidate = Parser()
                 candidate.feed(html)
                 if not valid_results(candidate):
+                    log_unverified(candidate, day, "browser")
                     raise RuntimeError("Browser returned unverified results")
                 page = candidate
                 print(f"Browser recovered query for {day}", flush=True)
@@ -253,6 +260,7 @@ def main():
                 candidate = Parser()
                 candidate.feed(fetch(opener, "sps04002", retry_fields))
                 if not valid_results(candidate):
+                    log_unverified(candidate, day, "final HTTP")
                     raise RuntimeError("Unverified results page on final retry")
                 page = candidate
                 print(f"Final HTTP retry succeeded for {day}", flush=True)
@@ -264,6 +272,7 @@ def main():
                         browser_session = BrowserSession()
                     candidate.feed(browser_session.query(day, retry_fields))
                     if not valid_results(candidate):
+                        log_unverified(candidate, day, "final browser")
                         raise RuntimeError("Unverified browser results on final retry")
                     page = candidate
                     print(f"Final browser retry succeeded for {day}", flush=True)
