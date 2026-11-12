@@ -366,6 +366,15 @@ def main():
         color = 0x2ECC71
         headline = "✅ 暂无空场"
 
+    # Include current vacancies in every monitoring report, even if already notified.
+    # This keeps the summary useful when no *new* vacancy alert is generated.
+    current_slots = sorted(found.values(), key=lambda v: (v["date"], v["time"], v["area"], v["venue"]))
+    slot_lines = [
+        f"• {v['date']}（星期{'一二三四五六日'[dt.date.fromisoformat(v['date']).weekday()]}） {v['time']} · {v['area']} · {v['venue']}"
+        for v in current_slots[:15]
+    ]
+    slot_details = ("\n📍 **当前空场**\n" + "\n".join(slot_lines)
+                    + (f"\n…另有 {len(current_slots) - 15} 条" if len(current_slots) > 15 else "")) if slot_lines else ""
     report = {
         "content": f"{mention} 🏸 监控完成",
         "embeds": [{
@@ -375,6 +384,7 @@ def main():
                 f"📅 {start_date} ～ {end_date}\n"
                 f"🔎 成功 **{checked}/{horizon}**  ·  ⚠️ 失败 **{failed}**  ·  🏸 空场 **{len(found)}**"
                 + (f"\n⚠️ 待补查：{', '.join(failed_dates[:12])}" + (f" 等共{failed}天" if failed > 12 else "") if failed_dates else "")
+                + slot_details
             ),
             "color": color,
             "url": booking_url,
