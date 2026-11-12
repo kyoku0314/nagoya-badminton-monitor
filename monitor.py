@@ -165,7 +165,7 @@ def main():
                 print(f"HTTP query attempt {attempt + 1}/2 failed for {day}: {type(exc).__name__}", flush=True)
                 consecutive_http_failures += 1
                 if consecutive_http_failures >= 3:
-                    http_cooldown = 5
+                    http_cooldown = 8
                 if attempt == 0 and not http_cooldown:
                     time.sleep(1)
                     jar.clear()
