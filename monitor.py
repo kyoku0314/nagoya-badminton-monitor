@@ -119,8 +119,8 @@ def main():
     http_cooldown = 0
     invalid_result_dates = []
     verified_dates = set()
-    # Check today and the next 19 days (20 dates total).
-    horizon = 20
+    # Check today and the next 29 days (30 dates total).
+    horizon = 30
     checked = 0
     failed = 0
     # Keep one browser-like session and one form state for the entire scan.
