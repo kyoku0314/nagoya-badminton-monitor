@@ -174,7 +174,15 @@ def main():
                         refreshed.feed(fetch(opener, "sps04001"))
                         if "syumoku" not in refreshed.fields:
                             raise RuntimeError("Search form missing on retry")
+                        # Preserve the requested date and filters after refreshing form tokens.
                         fields.update(refreshed.fields)
+                        fields.update(month=day.strftime("%m"), day=day.strftime("%d"),
+                                      syumoku="024", joken="1", chiiki="20",
+                                      kyoyo1="05" if day.weekday() < 5 else "07",
+                                      kyoyo2="00", button="照会",
+                                      syumokunm="バドミントン", chiikinm="全地域",
+                                      kyoyo1nm="夜間" if day.weekday() < 5 else "全供用",
+                                      kyoyo2nm="−−")
                     except Exception as refresh_error:
                         print(f"HTTP session refresh failed: {type(refresh_error).__name__}", flush=True)
         if page is None:
@@ -366,6 +374,7 @@ def main():
                 f"**{headline}**\n"
                 f"📅 {start_date} ～ {end_date}\n"
                 f"🔎 成功 **{checked}/{horizon}**  ·  ⚠️ 失败 **{failed}**  ·  🏸 空场 **{len(found)}**"
+                + (f"\n⚠️ 待补查：{', '.join(failed_dates[:12])}" + (f" 等共{failed}天" if failed > 12 else "") if failed_dates else "")
             ),
             "color": color,
             "url": booking_url,
