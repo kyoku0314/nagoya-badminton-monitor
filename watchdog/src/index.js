@@ -21,6 +21,23 @@ async function notify(env, message) {
   });
   if (!res.ok) throw new Error(`Discord HTTP ${res.status}`);
 }
+async function oneTimeSelfTest(env) {
+  const key = "selftest-2026-11-12-v1";
+  const state = JSON.parse(await env.WATCHDOG_STATE.get(key) || "{}");
+  if (state.completed) return;
+  // An extra normal workflow run tests the actual dispatch permission.
+  if (!state.dispatched) {
+    await github(`/actions/workflows/${WORKFLOW}/dispatches`, env, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "main" })
+    });
+    await env.WATCHDOG_STATE.put(key, JSON.stringify({ dispatched: true, completed: false }));
+    console.info("SELFTEST_DISPATCH_OK");
+  }
+  await notify(env, "🧪 外部守护自检：GitHub Actions 补跑请求成功，Discord 通知通道正常。此消息为一次性测试。");
+  await env.WATCHDOG_STATE.put(key, JSON.stringify({ dispatched: true, completed: true }));
+  console.info("SELFTEST_DISCORD_OK");
+}
 async function check(env) {
   if (!env.GITHUB_TOKEN || !env.WATCHDOG_STATE) throw new Error("Missing GITHUB_TOKEN or WATCHDOG_STATE binding");
   const now = Date.now();
@@ -60,7 +77,7 @@ async function check(env) {
 }
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(check(env).catch(async err => {
+    ctx.waitUntil((async () => { await oneTimeSelfTest(env); return check(env); })().catch(async err => {
       console.error("ERROR", String(err.message));
       await notify(env, `🚨 外部守护检查失败：${String(err.message).slice(0,250)}`).catch(console.error);
       throw err;
