@@ -6,6 +6,5 @@ compatibility_date = "2026-11-01"
 binding = "WATCHDOG_STATE"
 id = "90ba14bdd8b549f0b455f28ce7ab6eff"
 
-# Existing Cloudflare cron schedule must be copied here before deployment.
-# [triggers]
-# crons = ["REPLACE_WITH_EXISTING_CRON"]
+[triggers]
+crons = ["*/5 * * * *"]
