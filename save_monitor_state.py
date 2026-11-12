@@ -42,7 +42,21 @@ def main():
         Path("failed_dates.json").write_text(json.dumps(merged_failed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         git("add", *FILES)
         if not git("diff", "--cached", "--quiet", check=False).returncode:
-            git("commit", "-m", "Update monitor state [skip ci]")
+            committed = git("commit", "-m", "Update monitor state [skip ci]", check=False)
+            if committed.returncode:
+                # A concurrent index update or an empty commit must not be
+                # mistaken for a monitoring failure. Keep genuine errors visible.
+                pending = git("diff", "--cached", "--quiet", check=False)
+                if pending.returncode == 0:
+                    print("No state changes remain to commit")
+                    return
+                print(f"Commit attempt {attempt} failed (exit {committed.returncode})")
+                print("stdout:", committed.stdout.strip())
+                print("stderr:", committed.stderr.strip())
+                if attempt == 3:
+                    raise RuntimeError("Unable to commit monitor state")
+                time.sleep(attempt * 2)
+                continue
             pushed = git("push", "origin", "HEAD:main", check=False)
             if pushed.returncode == 0:
                 print("Monitor state saved successfully")
