@@ -1,5 +1,5 @@
 {
-  "name": "nagoya-badminton-watchdog",
+  "name": "nagoya-badminton-monitor",
   "main": "src/index.js",
   "compatibility_date": "2026-11-01",
   "triggers": {
@@ -9,7 +9,8 @@
   },
   "kv_namespaces": [
     {
-      "binding": "WATCHDOG_STATE"
+      "binding": "WATCHDOG_STATE",
+      "id": "90ba14bdd8b549f0b455f28ce7ab6eff"
     }
   ]
 }
