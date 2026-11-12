@@ -137,16 +137,11 @@ def main():
             except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
                 print(f"HTTP query attempt {attempt + 1}/2 failed for {day}: {type(exc).__name__}", flush=True)
                 if attempt == 0:
-                    time.sleep(2)
-                    jar.clear()
-                    try:
-                        refreshed = Parser()
-                        refreshed.feed(fetch(opener, "sps04001"))
-                    except Exception as refresh_error:
-                        print(f"HTTP session refresh failed: {type(refresh_error).__name__}", flush=True)
+                    # Retry quickly with the existing session; the browser fallback
+                    # will establish a fresh session if HTTP remains unavailable.
+                    time.sleep(1)
         if page is None:
-            print(f"Waiting 3 seconds before browser recovery for {day}", flush=True)
-            time.sleep(3)
+            print(f"Starting browser recovery for {day}", flush=True)
             try:
                 html = query_with_browser(day, fields)
                 candidate = Parser()
@@ -181,7 +176,7 @@ def main():
             found[key] = row
         checked += 1
         print(day, "matching slots:", len(rows), flush=True)
-        time.sleep(0.5)
+        time.sleep(0.2)
     # Give dates that failed during the main scan one final attempt after all dates.
     # Do not count a failed date as checked unless its results page is validated.
     if failed_dates:
