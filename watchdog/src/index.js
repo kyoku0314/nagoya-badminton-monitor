@@ -21,6 +21,25 @@ async function notify(env, message) {
   });
   if (!res.ok) throw new Error(`Discord HTTP ${res.status}`);
 }
+
+// Official reservation service operates 08:00-24:00 Japan time.
+// Do not treat its overnight and year-end closures as monitoring failures.
+function monitoringWindow(timestamp = Date.now()) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Tokyo", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23"
+  }).formatToParts(new Date(timestamp));
+  const get = type => Number(parts.find(p => p.type === type).value);
+  const month = get("month"), day = get("day");
+  const hour = get("hour"), minute = get("minute");
+  if ((month === 12 && day >= 29) || (month === 1 && day <= 3))
+    return { enabled: false, reason: "official_holiday" };
+  if (hour < 8) return { enabled: false, reason: "night_rest" };
+  if (hour === 8 && minute < 15)
+    return { enabled: false, reason: "morning_grace" };
+  return { enabled: true, reason: "business_hours" };
+}
+
 async function oneTimeSelfTest(env) {
   const key = "selftest-2026-11-12-v1";
   const state = JSON.parse(await env.WATCHDOG_STATE.get(key) || "{}");
@@ -41,6 +60,11 @@ async function oneTimeSelfTest(env) {
 async function check(env) {
   if (!env.GITHUB_TOKEN || !env.WATCHDOG_STATE) throw new Error("Missing GITHUB_TOKEN or WATCHDOG_STATE binding");
   const now = Date.now();
+  const window = monitoringWindow(now);
+  if (!window.enabled) {
+    console.info("PAUSED", window.reason);
+    return { status: "PAUSED", reason: window.reason };
+  }
   const data = await github(`/actions/workflows/${WORKFLOW}/runs?per_page=20&branch=main`, env);
   const runs = (data.workflow_runs || []).filter(r => ["schedule", "workflow_dispatch"].includes(r.event));
   const latest = runs[0];
@@ -77,7 +101,15 @@ async function check(env) {
 }
 export default {
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil((async () => { await oneTimeSelfTest(env); return check(env); })().catch(async err => {
+    ctx.waitUntil((async () => {
+      const window = monitoringWindow();
+      if (!window.enabled) {
+        console.info("PAUSED", window.reason);
+        return { status: "PAUSED", reason: window.reason };
+      }
+      await oneTimeSelfTest(env);
+      return check(env);
+    })().catch(async err => {
       console.error("ERROR", String(err.message));
       await notify(env, `🚨 外部守护检查失败：${String(err.message).slice(0,250)}`).catch(console.error);
       throw err;
