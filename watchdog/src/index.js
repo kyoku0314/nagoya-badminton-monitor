@@ -124,7 +124,8 @@ export default {
       const data = await github(`/actions/workflows/${WORKFLOW}/runs?per_page=1&branch=main`, env);
       const latest = data.workflow_runs?.[0];
       console.info("HEALTH_CHECK", JSON.stringify({ githubApi: "ok", hasRuns: !!latest }));
-      return Response.json({ watchdog: "online", githubApi: "ok", hasRuns: !!latest });
+      const window = monitoringWindow();
+      return Response.json({ watchdog: "online", githubApi: "ok", hasRuns: !!latest, monitoring: window.enabled ? "active" : "paused", reason: window.reason });
     } catch (err) {
       console.error("ERROR", "health_check", String(err.message));
       return Response.json({ watchdog: "degraded", githubApi: "error" }, { status: 503 });
