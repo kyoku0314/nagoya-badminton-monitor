@@ -49,14 +49,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
       - name: Save notified slots and failed-date backlog
-        run: |
-          if [ -n "$(git status --porcelain -- seen.json failed_dates.json)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add seen.json failed_dates.json
-            git commit -m "Update monitor state [skip ci]"
-            git push
-          fi
+        if: always()
+        run: python3 save_monitor_state.py
 
   test_discord:
     if: ${{ inputs.test_discord_only == true }}
