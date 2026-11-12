@@ -3,7 +3,7 @@ import datetime as dt
 import http.client
 import http.cookiejar
 import json
-from browser_fallback import query_with_browser
+from browser_fallback import BrowserSession
 import urllib.error
 import os
 import re
@@ -97,6 +97,10 @@ def main():
         raise RuntimeError("Search form missing; refusing to interpret as empty")
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
+    browser_session = None
+    consecutive_http_failures = 0
+    http_cooldown = 0
+    invalid_result_dates = []
     # Check today and the next 19 days (20 dates total).
     horizon = 20
     checked = 0
@@ -124,7 +128,9 @@ def main():
         fields["kyoyo1"] = "05" if day.weekday() < 5 else "07"
         fields["kyoyo1nm"] = "夜間" if day.weekday() < 5 else "全供用"
         page = None
-        for attempt in range(2):
+        for attempt in range(1 if http_cooldown else 2):
+            if http_cooldown:
+                break
             try:
                 candidate = Parser()
                 candidate.feed(fetch(opener, "sps04002", fields))
@@ -133,17 +139,24 @@ def main():
                 if "空き検索結果" not in " ".join(candidate.text):
                     raise RuntimeError("Unexpected results page")
                 page = candidate
+                consecutive_http_failures = 0
+                http_cooldown = 0
                 break
             except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
                 print(f"HTTP query attempt {attempt + 1}/2 failed for {day}: {type(exc).__name__}", flush=True)
-                if attempt == 0:
+                consecutive_http_failures += 1
+                if consecutive_http_failures >= 3:
+                    http_cooldown = 5
+                if attempt == 0 and not http_cooldown:
                     # Retry quickly with the existing session; the browser fallback
                     # will establish a fresh session if HTTP remains unavailable.
                     time.sleep(1)
         if page is None:
             print(f"Starting browser recovery for {day}", flush=True)
             try:
-                html = query_with_browser(day, fields)
+                if browser_session is None:
+                    browser_session = BrowserSession()
+                html = browser_session.query(day, fields)
                 candidate = Parser()
                 candidate.feed(html)
                 if "空き検索結果" not in " ".join(candidate.text):
@@ -165,10 +178,18 @@ def main():
                     current_month = (day.year, day.month)
             except Exception as recovery_error:
                 print(f"Browser recovery failed for {day}: {type(recovery_error).__name__}: {str(recovery_error)[:160]}", flush=True)
+        if http_cooldown:
+            http_cooldown -= 1
         if page is None:
             failed += 1
             failed_dates.append(day.isoformat())
             print(f"Skipped {day}; not marked empty", flush=True)
+            continue
+        if "No." not in page.text and not any(t in " ".join(page.text) for t in ("該当する施設はありません", "該当データはありません", "検索結果はありません", "該当するデータはありません", "該当する空きはありません")):
+            print(f"Warning: unverified empty results format for {day}; treating as failed", flush=True)
+            failed += 1
+            failed_dates.append(day.isoformat())
+            invalid_result_dates.append(day.isoformat())
             continue
         rows = parse_results(page.text, day)
         for row in rows:
@@ -215,7 +236,9 @@ def main():
                 print(f"Final HTTP retry failed for {day}: {type(exc).__name__}", flush=True)
                 try:
                     candidate = Parser()
-                    candidate.feed(query_with_browser(day, retry_fields))
+                    if browser_session is None:
+                        browser_session = BrowserSession()
+                    candidate.feed(browser_session.query(day, retry_fields))
                     if "空き検索結果" not in " ".join(candidate.text):
                         raise RuntimeError("Unexpected browser results on final retry")
                     page = candidate
@@ -232,6 +255,8 @@ def main():
             failed -= 1
             print(f"Final retry {day} matching slots: {len(rows)}", flush=True)
         failed_dates = remaining
+    if browser_session is not None:
+        browser_session.close()
     FAILED_STATE.write_text(json.dumps(failed_dates, ensure_ascii=False, indent=2) + "\\n".replace("\\n", "\n"))
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
@@ -313,7 +338,9 @@ def main():
         "allowed_mentions": {"parse": []}
     }
     report["content"] = ""  # Routine status reports must not ping the user.
-    send_discord(report, "monitoring report")
+    report_sent = send_discord(report, "monitoring report")
+    if not report_sent:
+        print("WARNING: Discord monitoring report was not delivered", flush=True)
     # Only mark notified slots as seen; retain history for 65 days.
     if webhook:
         previous.update(notified)
@@ -321,6 +348,8 @@ def main():
         previous = {k:v for k,v in previous.items() if v.get("date", "") >= cutoff}
         STATE.write_text(json.dumps(previous, ensure_ascii=False, indent=2) + "\n")
     print(f"Date coverage: {checked}/{horizon} checked, {failed} failed; new matching slots: {len(new)}; booking disabled", flush=True)
+    if webhook and not report_sent:
+        raise RuntimeError("Discord monitoring report delivery failed")
     if checked == 0:
         raise RuntimeError("All monitored dates failed; marking workflow unsuccessful")
 
