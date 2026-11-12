@@ -1,0 +1,15 @@
+# Copy to wrangler.toml ONLY after confirming your existing Worker settings.
+# An incomplete configuration must never be deployed over the active Worker.
+name = "nagoya-badminton-monitor"
+main = "index.js"
+compatibility_date = "2026-11-01"
+
+# Use the EXACT KV namespace ID bound to WATCHDOG_STATE on the active Worker.
+[[kv_namespaces]]
+binding = "WATCHDOG_STATE"
+id = "REPLACE_WITH_EXISTING_KV_NAMESPACE_ID"
+
+# Copy the current cron expression from Cloudflare Triggers.
+# The Worker itself silences overnight and Dec 29-Jan 3 checks.
+# [triggers]
+# crons = ["COPY_CURRENT_CRON_HERE"]
