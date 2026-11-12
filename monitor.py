@@ -90,7 +90,7 @@ def valid_results(page):
     text = " ".join(page.text)
     if "空き検索結果" not in text or "サービス時間外エラー画面" in text:
         return False
-    return "No." in page.text or bool(re.search(r"(?:該当|検索結果|空き施設)[^。\\n]{0,35}0\\s*件|0\\s*件[^。\\n]{0,35}(?:該当|検索結果|空き施設)", text)) or any(t in text for t in (
+    return "No." in page.text or "空き施設がないか、空き照会可能期間外です" in text or bool(re.search(r"(?:該当|検索結果|空き施設)[^。\\n]{0,35}0\\s*件|0\\s*件[^。\\n]{0,35}(?:該当|検索結果|空き施設)", text)) or any(t in text for t in (
         "該当する施設はありません", "該当データはありません", "検索結果はありません",
         "該当するデータはありません", "該当する空きはありません",
         "該当する施設がありません", "該当するデータがありません",
