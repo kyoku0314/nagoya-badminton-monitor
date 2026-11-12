@@ -18,6 +18,7 @@ JST = dt.timezone(dt.timedelta(hours=9))
 BASE = "https://www.net.city.nagoya.jp/cgi-bin/sp/"
 STATE = Path("seen.json")
 FAILED_STATE = Path("failed_dates.json")
+CHECKED_STATE = Path("checked_dates_run.json")
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
     "Referer": BASE + "sps04001",
@@ -84,6 +85,17 @@ def parse_results(lines, day):
                                 "time": f"{match.group(1).zfill(2)}:{match.group(2)}-{match.group(3).zfill(2)}:{match.group(4)}"})
     return results
 
+def valid_results(page):
+    """Never treat an unknown response as an empty search result."""
+    text = " ".join(page.text)
+    if "空き検索結果" not in text or "サービス時間外エラー画面" in text:
+        return False
+    return "No." in page.text or any(t in text for t in (
+        "該当する施設はありません", "該当データはありません", "検索結果はありません",
+        "該当するデータはありません", "該当する空きはありません",
+        "該当する施設がありません", "該当するデータがありません",
+    ))
+
 def main():
     now = dt.datetime.now(JST)
     if not (8 <= now.hour < 24):
@@ -101,6 +113,7 @@ def main():
     consecutive_http_failures = 0
     http_cooldown = 0
     invalid_result_dates = []
+    verified_dates = set()
     # Check today and the next 19 days (20 dates total).
     horizon = 20
     checked = 0
@@ -136,8 +149,8 @@ def main():
                 candidate.feed(fetch(opener, "sps04002", fields))
                 if "サービス時間外エラー画面" in candidate.text or "spsConnectionErr.html" in candidate.text:
                     raise RuntimeError("Site service error")
-                if "空き検索結果" not in " ".join(candidate.text):
-                    raise RuntimeError("Unexpected results page")
+                if not valid_results(candidate):
+                    raise RuntimeError("Unverified results page")
                 page = candidate
                 consecutive_http_failures = 0
                 http_cooldown = 0
@@ -148,9 +161,16 @@ def main():
                 if consecutive_http_failures >= 3:
                     http_cooldown = 5
                 if attempt == 0 and not http_cooldown:
-                    # Retry quickly with the existing session; the browser fallback
-                    # will establish a fresh session if HTTP remains unavailable.
                     time.sleep(1)
+                    jar.clear()
+                    try:
+                        refreshed = Parser()
+                        refreshed.feed(fetch(opener, "sps04001"))
+                        if "syumoku" not in refreshed.fields:
+                            raise RuntimeError("Search form missing on retry")
+                        fields.update(refreshed.fields)
+                    except Exception as refresh_error:
+                        print(f"HTTP session refresh failed: {type(refresh_error).__name__}", flush=True)
         if page is None:
             print(f"Starting browser recovery for {day}", flush=True)
             try:
@@ -159,8 +179,8 @@ def main():
                 html = browser_session.query(day, fields)
                 candidate = Parser()
                 candidate.feed(html)
-                if "空き検索結果" not in " ".join(candidate.text):
-                    raise RuntimeError("Browser did not return search results")
+                if not valid_results(candidate):
+                    raise RuntimeError("Browser returned unverified results")
                 page = candidate
                 print(f"Browser recovered query for {day}", flush=True)
                 # Browser session is separate from urllib session. Restart the
@@ -178,6 +198,9 @@ def main():
                     current_month = (day.year, day.month)
             except Exception as recovery_error:
                 print(f"Browser recovery failed for {day}: {type(recovery_error).__name__}: {str(recovery_error)[:160]}", flush=True)
+                if browser_session is not None:
+                    browser_session.close()
+                    browser_session = None
         if http_cooldown:
             http_cooldown -= 1
         if page is None:
@@ -185,7 +208,7 @@ def main():
             failed_dates.append(day.isoformat())
             print(f"Skipped {day}; not marked empty", flush=True)
             continue
-        if "No." not in page.text and not any(t in " ".join(page.text) for t in ("該当する施設はありません", "該当データはありません", "検索結果はありません", "該当するデータはありません", "該当する空きはありません")):
+        if not valid_results(page):
             print(f"Warning: unverified empty results format for {day}; treating as failed", flush=True)
             failed += 1
             failed_dates.append(day.isoformat())
@@ -196,6 +219,7 @@ def main():
             key = "|".join(row.values())
             found[key] = row
         checked += 1
+        verified_dates.add(day.isoformat())
         print(day, "matching slots:", len(rows), flush=True)
         time.sleep(0.2)
     # Give dates that failed during the main scan one final attempt after all dates.
@@ -228,8 +252,8 @@ def main():
                 )
                 candidate = Parser()
                 candidate.feed(fetch(opener, "sps04002", retry_fields))
-                if "空き検索結果" not in " ".join(candidate.text):
-                    raise RuntimeError("Unexpected results page on final retry")
+                if not valid_results(candidate):
+                    raise RuntimeError("Unverified results page on final retry")
                 page = candidate
                 print(f"Final HTTP retry succeeded for {day}", flush=True)
             except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
@@ -239,12 +263,15 @@ def main():
                     if browser_session is None:
                         browser_session = BrowserSession()
                     candidate.feed(browser_session.query(day, retry_fields))
-                    if "空き検索結果" not in " ".join(candidate.text):
-                        raise RuntimeError("Unexpected browser results on final retry")
+                    if not valid_results(candidate):
+                        raise RuntimeError("Unverified browser results on final retry")
                     page = candidate
                     print(f"Final browser retry succeeded for {day}", flush=True)
                 except Exception as recovery_error:
                     print(f"Final browser retry failed for {day}: {type(recovery_error).__name__}", flush=True)
+                    if browser_session is not None:
+                        browser_session.close()
+                        browser_session = None
             if page is None:
                 remaining.append(date_text)
                 continue
@@ -252,12 +279,14 @@ def main():
             for row in rows:
                 found["|".join(row.values())] = row
             checked += 1
+            verified_dates.add(day.isoformat())
             failed -= 1
             print(f"Final retry {day} matching slots: {len(rows)}", flush=True)
         failed_dates = remaining
     if browser_session is not None:
         browser_session.close()
-    FAILED_STATE.write_text(json.dumps(failed_dates, ensure_ascii=False, indent=2) + "\\n".replace("\\n", "\n"))
+    FAILED_STATE.write_text(json.dumps(failed_dates, ensure_ascii=False, indent=2) + "\n")
+    CHECKED_STATE.write_text(json.dumps(sorted(verified_dates), ensure_ascii=False, indent=2) + "\n")
     print(f"Priority backlog for next run: {len(failed_dates)} dates", flush=True)
     new = {k:v for k,v in found.items() if k not in previous}
     webhook = os.environ.get("DISCORD_WEBHOOK_URL", "")
