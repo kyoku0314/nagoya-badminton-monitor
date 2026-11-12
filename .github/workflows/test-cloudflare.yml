@@ -1,0 +1,23 @@
+name: Test Cloudflare Watchdog
+
+on:
+  push:
+    paths:
+      - 'cloudflare/**'
+      - '.github/workflows/test-cloudflare.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check Worker JavaScript syntax
+        run: |
+          cp cloudflare/index.js /tmp/nagoya-watchdog.mjs
+          node --check /tmp/nagoya-watchdog.mjs
+      - name: Verify Japan business hours and holiday boundaries
+        run: node cloudflare/test-window.cjs
