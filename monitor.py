@@ -329,7 +329,7 @@ def main():
         for batch_start in range(0, len(items), 8):
             batch = items[batch_start:batch_start+8]
             details = "\n".join(
-                f"**{v['date']} · {v['time']}**\n{v['area']} · {v['venue']}"
+                f"**{v['date']}（星期{'一二三四五六日'[dt.date.fromisoformat(v['date']).weekday()]}） · {v['time']}**\n{v['area']} · {v['venue']}"
                 for _, v in batch
             )
             alert = {
