@@ -337,7 +337,8 @@ def main():
         }],
         "allowed_mentions": {"parse": []}
     }
-    report["content"] = ""  # Routine status reports must not ping the user.
+    report["content"] = f"{mention} 🏸 监控完成"  # Ping on every completed scan.
+    report["allowed_mentions"] = {"users": ["581389351649542154"]}
     report_sent = send_discord(report, "monitoring report")
     if not report_sent:
         print("WARNING: Discord monitoring report was not delivered", flush=True)
