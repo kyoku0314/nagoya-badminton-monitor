@@ -64,6 +64,23 @@ def fetch(opener, path, fields=None):
     with opener.open(req, timeout=8) as response:
         return response.read().decode("shift_jis", errors="replace")
 
+NETWORK_ERRORS = (TimeoutError, urllib.error.URLError, http.client.HTTPException, ConnectionError, OSError)
+
+def fetch_initial_form(opener, jar, attempts=3):
+    for attempt in range(attempts):
+        try:
+            page = Parser()
+            page.feed(fetch(opener, "sps04001"))
+            if "syumoku" not in page.fields:
+                raise RuntimeError("Search form missing")
+            return page
+        except (*NETWORK_ERRORS, RuntimeError) as exc:
+            print(f"Initial form attempt {attempt + 1}/{attempts} failed: {type(exc).__name__}", flush=True)
+            if attempt == attempts - 1:
+                raise
+            jar.clear()
+            time.sleep(min(2 ** attempt, 4))
+
 def parse_results(lines, day):
     results = []
     for i in range(len(lines)):
@@ -108,10 +125,7 @@ def main():
         return
     jar = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
-    first = Parser()
-    first.feed(fetch(opener, "sps04001"))
-    if "syumoku" not in first.fields:
-        raise RuntimeError("Search form missing; refusing to interpret as empty")
+    first = fetch_initial_form(opener, jar)
     previous = json.loads(STATE.read_text()) if STATE.exists() else {}
     found = {}
     browser_session = None
@@ -161,7 +175,7 @@ def main():
                 consecutive_http_failures = 0
                 http_cooldown = 0
                 break
-            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+            except (*NETWORK_ERRORS, RuntimeError) as exc:
                 print(f"HTTP query attempt {attempt + 1}/2 failed for {day}: {type(exc).__name__}", flush=True)
                 consecutive_http_failures += 1
                 if consecutive_http_failures >= 3:
@@ -201,8 +215,7 @@ def main():
                 # Browser session is separate from urllib session. Restart the
                 # HTTP form session before querying subsequent dates.
                 jar.clear()
-                refreshed = Parser()
-                refreshed.feed(fetch(opener, "sps04001"))
+                refreshed = fetch_initial_form(opener, jar)
                 if "syumoku" in refreshed.fields:
                     fields = dict(refreshed.fields)
                     fields.update(syumoku="024", joken="1", kyoyo1="07",
@@ -272,7 +285,7 @@ def main():
                     raise RuntimeError("Unverified results page on final retry")
                 page = candidate
                 print(f"Final HTTP retry succeeded for {day}", flush=True)
-            except (TimeoutError, urllib.error.URLError, http.client.IncompleteRead, RuntimeError) as exc:
+            except (*NETWORK_ERRORS, RuntimeError) as exc:
                 print(f"Final HTTP retry failed for {day}: {type(exc).__name__}", flush=True)
                 try:
                     candidate = Parser()
@@ -326,7 +339,7 @@ def main():
         except urllib.error.HTTPError as exc:
             detail = exc.read(250).decode("utf-8", errors="replace")
             print(f"Discord {label} rejected: HTTP {exc.code}; response: {detail}", flush=True)
-        except (urllib.error.URLError, TimeoutError) as exc:
+        except NETWORK_ERRORS as exc:
             print(f"Discord {label} network error: {type(exc).__name__}", flush=True)
         return False
 
