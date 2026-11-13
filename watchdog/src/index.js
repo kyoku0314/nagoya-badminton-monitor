@@ -35,8 +35,7 @@ function monitoringWindow(timestamp = Date.now()) {
   if ((month === 12 && day >= 29) || (month === 1 && day <= 3))
     return { enabled: false, reason: "official_holiday" };
   if (hour < 8) return { enabled: false, reason: "night_rest" };
-  if (hour === 8 && minute < 15)
-    return { enabled: false, reason: "morning_grace" };
+
   return { enabled: true, reason: "business_hours" };
 }
 
@@ -73,7 +72,14 @@ async function check(env) {
   const age = lastStart ? Math.round((now - lastStart) / 60000) : null;
   const lastSuccess = runs.find(r => r.conclusion === "success");
   const successAge = lastSuccess ? Math.round((now - Date.parse(lastSuccess.created_at)) / 60000) : null;
+  // Allow the 08:02 scheduled GitHub run to start; recover from 08:05 onward.
+  const jstNow = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(now));
+  const morningStartup = jstNow >= "08:00" && jstNow < "08:05";
   const stale = !latest || age > 22;
+  if (morningStartup) {
+    console.info("MORNING_CHECK", JSON.stringify({ ageMinutes: age, active, dispatchAllowed: false }));
+    return { status: "MORNING_CHECK", age };
+  }
   const state = JSON.parse(await env.WATCHDOG_STATE.get("state") || "{}");
   const lastDispatch = state.lastDispatch || 0;
   const cooldown = now - lastDispatch < 20 * 60000;
@@ -107,7 +113,6 @@ export default {
         console.info("PAUSED", window.reason);
         return { status: "PAUSED", reason: window.reason };
       }
-      await oneTimeSelfTest(env);
       return check(env);
     })().catch(async err => {
       console.error("ERROR", String(err.message));
