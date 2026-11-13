@@ -85,7 +85,14 @@ async function check(env) {
   const age = lastStart ? Math.round((now - lastStart) / 60000) : null;
   const lastSuccess = runs.find((r) => r.conclusion === "success");
   const successAge = lastSuccess ? Math.round((now - Date.parse(lastSuccess.created_at)) / 60000) : null;
+  // Allow the 08:02 scheduled GitHub run to start; recover from 08:05 onward.
+  const jstNow = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(now));
+  const morningStartup = jstNow >= "08:00" && jstNow < "08:05";
   const stale = !latest || age > 22;
+  if (morningStartup) {
+    console.info("MORNING_CHECK", JSON.stringify({ ageMinutes: age, active, dispatchAllowed: false }));
+    return { status: "MORNING_CHECK", age };
+  }
   const state = JSON.parse((await env.WATCHDOG_STATE.get("state")) || "{}");
   const lastDispatch = state.lastDispatch || 0;
   const cooldown = now - lastDispatch < 20 * 60000;
@@ -124,7 +131,6 @@ export default {
         console.info("PAUSED", JSON.stringify({ reason: window.reason, jst: window.jst }));
         return { status: "PAUSED", reason: window.reason };
       }
-      await oneTimeSelfTest(env);
       return check(env);
     })().catch(async (err) => {
       console.error("ERROR", String(err.message));
