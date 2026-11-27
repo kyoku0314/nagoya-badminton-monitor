@@ -2,7 +2,7 @@
 // Runtime bindings: GITHUB_TOKEN (secret), DISCORD_WEBHOOK_URL (secret),
 // WATCHDOG_STATE (KV). Never commit credentials.
 const OWNER = "kyoku0314";
-const REPO = "nagoya-badminton-monitor";
+const REPO = "nagoya-badminton-monitor-public";
 const WORKFLOW = "monitor.yml";
 const API = "https://api.github.com/repos/" + OWNER + "/" + REPO;
 
@@ -47,7 +47,7 @@ function monitoringWindow(timestamp = Date.now()) {
   if ((jst.month === 12 && jst.day >= 29) || (jst.month === 1 && jst.day <= 3))
     return { enabled: false, reason: "official_holiday", jst };
   if (jst.hour < 8) return { enabled: false, reason: "night_rest", jst };
-  if (jst.hour === 8 && jst.minute < 15)
+  if (jst.hour === 8 && jst.minute < 5)
     return { enabled: false, reason: "morning_grace", jst };
   return { enabled: true, reason: "business_hours", jst };
 }
@@ -88,16 +88,16 @@ async function check(env) {
   // Allow the 08:02 scheduled GitHub run to start; recover from 08:05 onward.
   const jstNow = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(now));
   const morningStartup = jstNow >= "08:00" && jstNow < "08:05";
-  const stale = !latest || age > 22;
+  const stale = !latest || age > 35;
   if (morningStartup) {
     console.info("MORNING_CHECK", JSON.stringify({ ageMinutes: age, active, dispatchAllowed: false }));
     return { status: "MORNING_CHECK", age };
   }
-  const state = JSON.parse((await env.WATCHDOG_STATE.get("state")) || "{}");
+  const state = JSON.parse((await env.WATCHDOG_STATE.get("state-public")) || "{}");
   const lastDispatch = state.lastDispatch || 0;
   const cooldown = now - lastDispatch < 20 * 60000;
   if (stale && !active && !cooldown) {
-    await env.WATCHDOG_STATE.put("state", JSON.stringify({ ...state, lastDispatch: now }));
+    await env.WATCHDOG_STATE.put("state-public", JSON.stringify({ ...state, lastDispatch: now }));
     await github("/actions/workflows/" + WORKFLOW + "/dispatches", env, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ref: "main" })
@@ -108,7 +108,7 @@ async function check(env) {
   }
   const failing = latest?.conclusion === "failure" || (successAge !== null && successAge > 60);
   if (failing && now - (state.lastAlert || 0) > 60 * 60000) {
-    await env.WATCHDOG_STATE.put("state", JSON.stringify({ ...state, lastAlert: now }));
+    await env.WATCHDOG_STATE.put("state-public", JSON.stringify({ ...state, lastAlert: now }));
     console.warn("ERROR", JSON.stringify({ reason: "monitor_failure", successAgeMinutes: successAge }));
     await notify(env, "⚠️ 羽毛球监控故障：最近运行状态 " +
       (latest?.conclusion || latest?.status || "未知") +
@@ -151,7 +151,7 @@ export default {
       const window = monitoringWindow();
       console.info("HEALTH_CHECK", JSON.stringify({ githubApi: "ok", hasRuns: !!latest }));
       return Response.json({
-        watchdog: "online", githubApi: "ok", hasRuns: !!latest,
+        watchdog: "online", repository: REPO, githubApi: "ok", hasRuns: !!latest,
         monitoring: window.enabled ? "active" : "paused", reason: window.reason
       });
     } catch (err) {
